@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Reportes — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+  <style>
+    .report-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+    .tab-btn {
+      padding:7px 14px; border-radius:6px; border:1px solid var(--border);
+      background:transparent; color:var(--muted); cursor:pointer; font-size:12px;
+      transition:all .15s;
+    }
+    .tab-btn:hover  { color:var(--text); border-color:var(--muted); }
+    .tab-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .sql-badge {
+      display:inline-block; padding:2px 7px; border-radius:4px;
+      font-size:10px; font-family:var(--font); background:rgba(79,142,247,.1); color:#7fb4ff;
+      border:1px solid rgba(79,142,247,.3); margin-bottom:10px;
+    }
+    .report-panel { display:none; }
+    .report-panel.active { display:block; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Reportes</h1>
+      <p>Consultas avanzadas sobre el negocio</p>
+    </div>
+
+    <div class="report-tabs">
+      <button class="tab-btn active" onclick="showReport('ventas-dia')">Ventas por día</button>
+      <button class="tab-btn" onclick="showReport('top-productos')">Top productos</button>
+      <button class="tab-btn" onclick="showReport('ranking-cats')">Ranking categorías</button>
+      <button class="tab-btn" onclick="showReport('por-empleado')">Por empleado</button>
+      <button class="tab-btn" onclick="showReport('stock-bajo')">Stock bajo</button>
+      <button class="tab-btn" onclick="showReport('sin-compra')">Clientes sin compra</button>
+      <button class="tab-btn" onclick="showReport('sin-venta')">Productos sin venta</button>
+      <button class="tab-btn" onclick="showReport('margen')">Margen de ganancia</button>
+    </div>
+
+    <!-- Ventas por día: GROUP BY + HAVING -->
+    <div class="report-panel active card" id="panel-ventas-dia">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">GROUP BY + HAVING + AVG</span>
+          <h2>Ventas por día (últimos 30 días)</h2>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="downloadCSV('/reportes/exportar-ventas-csv','ventas.csv')">⬇ CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Fecha</th><th>Ventas</th><th>Ingresos</th><th>Ticket promedio</th></tr></thead>
+        <tbody id="tbody-ventas-dia"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Top productos: JOIN 3 tablas -->
+    <div class="report-panel card" id="panel-top-productos">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">JOIN múltiples tablas</span>
+          <h2>Top 10 productos más vendidos</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>#</th><th>Producto</th><th>Categoría</th><th>Unidades</th><th>Ingresos</th></tr></thead>
+        <tbody id="tbody-top-prod"><tr><td colspan="5" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Ranking categorías: CTE + WINDOW FUNCTION -->
+    <div class="report-panel card" id="panel-ranking-cats">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">CTE (WITH) + RANK() OVER</span>
+          <h2>Ranking de categorías por ingresos</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Ranking</th><th>Categoría</th><th>Nº Ventas</th><th>Ingresos</th></tr></thead>
+        <tbody id="tbody-ranking"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Por empleado: VIEW -->
+    <div class="report-panel card" id="panel-por-empleado">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">VIEW v_resumen_ventas_empleado</span>
+          <h2>Ventas por empleado</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Empleado</th><th>Cargo</th><th>Ventas</th><th>Monto total</th></tr></thead>
+        <tbody id="tbody-empleado"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Stock bajo: VIEW v_stock_bajo -->
+    <div class="report-panel card" id="panel-stock-bajo">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">VIEW v_stock_bajo</span>
+          <h2>Productos con stock crítico (≤ 5)</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Producto</th><th>Stock</th><th>Precio</th><th>Categoría</th><th>Proveedor</th><th>Teléfono</th></tr></thead>
+        <tbody id="tbody-stock"><tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Clientes sin compra: NOT IN subquery -->
+    <div class="report-panel card" id="panel-sin-compra">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">SUBQUERY con NOT IN</span>
+          <h2>Clientes que nunca han comprado</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Nombre</th><th>Email</th><th>Teléfono</th><th>Registrado</th></tr></thead>
+        <tbody id="tbody-sin-compra"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Productos sin venta: NOT EXISTS subquery -->
+    <div class="report-panel card" id="panel-sin-venta">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">SUBQUERY con NOT EXISTS</span>
+          <h2>Productos nunca vendidos</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Producto</th><th>Categoría</th><th>Stock</th><th>Precio</th></tr></thead>
+        <tbody id="tbody-sin-venta"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Margen: subquery correlacionado en FROM -->
+    <div class="report-panel card" id="panel-margen">
+      <div class="card-header">
+        <div>
+          <span class="sql-badge">Subquery correlacionado en FROM</span>
+          <h2>Margen de ganancia por producto</h2>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Producto</th><th>Precio venta</th><th>Costo compra</th><th>Margen Q</th><th>Margen %</th></tr></thead>
+        <tbody id="tbody-margen"><tr><td colspan="5" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../js/api.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+buildLayout("reportes");
+
+const loaded = {};
+
+function showReport(name) {
+  document.querySelectorAll(".report-panel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById(`panel-${name}`).classList.add("active");
+  event.currentTarget.classList.add("active");
+  if (!loaded[name]) { loaded[name]=true; loadReport(name); }
+}
+
+async function loadReport(name) {
+  try {
+    switch(name) {
+      case "ventas-dia": {
+        const r = await api.get("/reportes/ventas-por-dia");
+        renderTable("tbody-ventas-dia", r, [
+          { key:"dia", render:row=>fmtDate(row.dia) },
+          { key:"total_ventas" },
+          { key:"ingresos", render:row=>fmtMoney(row.ingresos) },
+          { key:"ticket_promedio", render:row=>fmtMoney(row.ticket_promedio) },
+        ]); break;
+      }
+      case "top-productos": {
+        const r = await api.get("/reportes/productos-mas-vendidos");
+        const tbody = document.getElementById("tbody-top-prod");
+        tbody.innerHTML = r.map((row,i)=>`<tr>
+          <td><span class="badge badge-purple">#${i+1}</span></td>
+          <td>${row.producto}</td>
+          <td><span class="badge badge-blue">${row.categoria}</span></td>
+          <td>${row.unidades_vendidas}</td>
+          <td>${fmtMoney(row.ingresos_totales)}</td></tr>`).join(""); break;
+      }
+      case "ranking-cats": {
+        const r = await api.get("/reportes/ranking-categorias");
+        renderTable("tbody-ranking", r, [
+          { key:"ranking", render:row=>`<span class="badge badge-orange">#${row.ranking}</span>` },
+          { key:"categoria" },
+          { key:"num_ventas" },
+          { key:"ingresos", render:row=>fmtMoney(row.ingresos) },
+        ]); break;
+      }
+      case "por-empleado": {
+        const r = await api.get("/reportes/ventas-por-empleado");
+        renderTable("tbody-empleado", r, [
+          { key:"empleado" },
+          { key:"cargo", render:row=>`<span class="badge badge-blue">${row.cargo||"—"}</span>` },
+          { key:"total_ventas" },
+          { key:"monto_total", render:row=>fmtMoney(row.monto_total) },
+        ]); break;
+      }
+      case "stock-bajo": {
+        const r = await api.get("/reportes/stock-bajo");
+        renderTable("tbody-stock", r, [
+          { key:"nombre" },
+          { key:"stock", render:row=>`<span class="badge badge-red">${row.stock}</span>` },
+          { key:"precio_unitario", render:row=>fmtMoney(row.precio_unitario) },
+          { key:"categoria" },
+          { key:"proveedor" },
+          { key:"telefono_proveedor" },
+        ]); break;
+      }
+      case "sin-compra": {
+        const r = await api.get("/reportes/clientes-sin-compra");
+        renderTable("tbody-sin-compra", r, [
+          { key:"nombre" },
+          { key:"email" },
+          { key:"telefono" },
+          { key:"created_at", render:row=>fmtDate(row.created_at) },
+        ]); break;
+      }
+      case "sin-venta": {
+        const r = await api.get("/reportes/productos-sin-venta");
+        renderTable("tbody-sin-venta", r, [
+          { key:"nombre" },
+          { key:"categoria" },
+          { key:"stock" },
+          { key:"precio_unitario", render:row=>fmtMoney(row.precio_unitario) },
+        ]); break;
+      }
+      case "margen": {
+        const r = await api.get("/reportes/margen-productos");
+        renderTable("tbody-margen", r, [
+          { key:"nombre" },
+          { key:"precio_venta",    render:row=>fmtMoney(row.precio_venta) },
+          { key:"costo_unitario",  render:row=>fmtMoney(row.costo_unitario) },
+          { key:"margen_bruto",    render:row=>`<span style="color:${row.margen_bruto>0?'var(--success)':'var(--danger)'}">${fmtMoney(row.margen_bruto)}</span>` },
+          { key:"margen_pct",      render:row=>`<span style="color:${row.margen_pct>0?'var(--success)':'var(--danger)'}">${row.margen_pct}%</span>` },
+        ]); break;
+      }
+    }
+  } catch(e) { showToast("Error cargando reporte: "+e.message,"error"); }
+}
+
+// Cargar el primero al abrir
+loaded["ventas-dia"] = true;
+loadReport("ventas-dia");
+</script>
+</body>
+</html>

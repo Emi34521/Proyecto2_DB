@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Iniciar sesión — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <h1>▣ TIENDA</h1>
+      <p>Sistema de inventario y ventas</p>
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group">
+      <label>Correo electrónico</label>
+      <input id="correo" type="email" class="form-control" placeholder="admin@tienda.com" autocomplete="username"/>
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input id="contrasena" type="password" class="form-control" placeholder="••••••••" autocomplete="current-password"/>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:8px;justify-content:center;" id="btn-login">
+      Iniciar sesión
+    </button>
+    <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
+      admin@tienda.com / Admin1234
+    </p>
+  </div>
+</div>
+<script src="js/api.js"></script>
+<script>
+  // Si ya tiene sesión, redirigir al dashboard
+  if (getToken()) window.location.href = "/index.html";
+
+  async function doLogin() {
+    const correo     = document.getElementById("correo").value.trim();
+    const contrasena = document.getElementById("contrasena").value;
+    const errDiv     = document.getElementById("login-error");
+    const btn        = document.getElementById("btn-login");
+
+    errDiv.style.display = "none";
+    if (!correo || !contrasena) {
+      errDiv.textContent = "Por favor ingresa correo y contraseña.";
+      errDiv.style.display = "block";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Ingresando...';
+
+    try {
+      const data = await api.post("/auth/login", { correo, contrasena });
+      setSession(data);
+      window.location.href = "/index.html";
+    } catch (e) {
+      errDiv.textContent = e.message;
+      errDiv.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Iniciar sesión";
+    }
+  }
+
+  document.getElementById("btn-login").addEventListener("click", doLogin);
+  document.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Proveedores — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header"><h1>Proveedores</h1><p>Gestión de proveedores</p></div>
+    <div class="card">
+      <div class="card-header"><span></span><button class="btn btn-primary" onclick="openCreate()">+ Nuevo proveedor</button></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>ID</th><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Ubicación</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="modal-overlay" id="modal-main">
+  <div class="modal">
+    <div class="modal-header"><h3 id="modal-title">Nuevo proveedor</h3><button class="modal-close" onclick="closeModal('modal-main')">✕</button></div>
+    <input type="hidden" id="x-id"/>
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input id="x-nombre" class="form-control"/></div>
+      <div class="form-group"><label>Contacto</label><input id="x-contacto" class="form-control"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Teléfono</label><input id="x-tel" class="form-control"/></div>
+      <div class="form-group"><label>Email</label><input id="x-email" type="email" class="form-control"/></div>
+    </div>
+    <div class="form-group"><label>Ubicación</label><input id="x-ubic" class="form-control"/></div>
+    <div id="x-err" style="color:var(--danger);font-size:12px;display:none;"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-main')">Cancelar</button><button class="btn btn-primary" onclick="save()">Guardar</button></div>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-del">
+  <div class="modal" style="max-width:360px;"><div class="modal-header"><h3>Eliminar proveedor</h3><button class="modal-close" onclick="closeModal('modal-del')">✕</button></div>
+  <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación?</p>
+  <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-del')">Cancelar</button><button class="btn btn-danger" onclick="confirmDel()">Eliminar</button></div></div>
+</div>
+<script src="../js/api.js"></script><script src="../js/layout.js"></script>
+<script>
+buildLayout("proveedores");
+let all=[],delId=null;
+async function load(){try{all=await api.get("/proveedores");render(all);}catch(e){showToast(e.message,"error");}}
+function render(rows){const tbody=document.getElementById("tbody");if(!rows.length){tbody.innerHTML=`<tr><td colspan="7" class="empty-state">Sin proveedores</td></tr>`;return;}
+tbody.innerHTML=rows.map(p=>`<tr><td><span class="badge badge-blue">#${p.id_proveedor}</span></td><td><strong>${p.nombre}</strong></td><td>${p.contacto||"—"}</td><td>${p.telefono||"—"}</td><td>${p.email||"—"}</td><td>${p.ubicacion||"—"}</td>
+<td><button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id_proveedor})">Editar</button><button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${p.id_proveedor})">Eliminar</button></td></tr>`).join("");}
+function clearForm(){["x-id","x-nombre","x-contacto","x-tel","x-email","x-ubic"].forEach(id=>document.getElementById(id).value="");document.getElementById("x-err").style.display="none";}
+function openCreate(){clearForm();document.getElementById("modal-title").textContent="Nuevo proveedor";openModal("modal-main");}
+function openEdit(id){const p=all.find(x=>x.id_proveedor===id);document.getElementById("x-id").value=p.id_proveedor;document.getElementById("x-nombre").value=p.nombre;document.getElementById("x-contacto").value=p.contacto||"";document.getElementById("x-tel").value=p.telefono||"";document.getElementById("x-email").value=p.email||"";document.getElementById("x-ubic").value=p.ubicacion||"";document.getElementById("modal-title").textContent="Editar proveedor";openModal("modal-main");}
+function openDel(id){delId=id;openModal("modal-del");}
+async function confirmDel(){try{await api.delete(`/proveedores/${delId}`);showToast("Eliminado","success");closeModal("modal-del");load();}catch(e){showToast(e.message,"error");}}
+async function save(){const errDiv=document.getElementById("x-err");const id=document.getElementById("x-id").value;
+const body={nombre:document.getElementById("x-nombre").value.trim(),contacto:document.getElementById("x-contacto").value.trim(),telefono:document.getElementById("x-tel").value.trim(),email:document.getElementById("x-email").value.trim(),ubicacion:document.getElementById("x-ubic").value.trim()};
+if(!body.nombre){errDiv.textContent="Nombre obligatorio.";errDiv.style.display="block";return;}
+try{if(id)await api.put(`/proveedores/${id}`,body);else await api.post("/proveedores",body);showToast(id?"Actualizado":"Creado","success");closeModal("modal-main");load();}catch(e){errDiv.textContent=e.message;errDiv.style.display="block";}}
+load();
+</script>
+</body>
+</html>

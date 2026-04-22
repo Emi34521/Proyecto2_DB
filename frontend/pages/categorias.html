@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Categorías — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header"><h1>Categorías</h1><p>Organización del catálogo</p></div>
+    <div class="card">
+      <div class="card-header"><span></span><button class="btn btn-primary" onclick="openCreate()">+ Nueva categoría</button></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>ID</th><th>Nombre</th><th>Descripción</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="modal-overlay" id="modal-main">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header"><h3 id="modal-title">Nueva categoría</h3><button class="modal-close" onclick="closeModal('modal-main')">✕</button></div>
+    <input type="hidden" id="x-id"/>
+    <div class="form-group"><label>Nombre *</label><input id="x-nombre" class="form-control"/></div>
+    <div class="form-group"><label>Descripción</label><input id="x-desc" class="form-control"/></div>
+    <div id="x-err" style="color:var(--danger);font-size:12px;display:none;"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-main')">Cancelar</button><button class="btn btn-primary" onclick="save()">Guardar</button></div>
+  </div>
+</div>
+<div class="modal-overlay" id="modal-del">
+  <div class="modal" style="max-width:360px;"><div class="modal-header"><h3>Eliminar categoría</h3><button class="modal-close" onclick="closeModal('modal-del')">✕</button></div>
+  <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación? Los productos asociados pueden verse afectados.</p>
+  <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-del')">Cancelar</button><button class="btn btn-danger" onclick="confirmDel()">Eliminar</button></div></div>
+</div>
+<script src="../js/api.js"></script><script src="../js/layout.js"></script>
+<script>
+buildLayout("categorias");
+let all=[],delId=null;
+async function load(){try{all=await api.get("/categorias");render(all);}catch(e){showToast(e.message,"error");}}
+function render(rows){const tbody=document.getElementById("tbody");if(!rows.length){tbody.innerHTML=`<tr><td colspan="4" class="empty-state">Sin categorías</td></tr>`;return;}
+tbody.innerHTML=rows.map(c=>`<tr><td><span class="badge badge-blue">#${c.id_categoria}</span></td><td><strong>${c.nombre}</strong></td><td>${c.descripcion||"—"}</td>
+<td><button class="btn btn-ghost btn-sm" onclick="openEdit(${c.id_categoria})">Editar</button><button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${c.id_categoria})">Eliminar</button></td></tr>`).join("");}
+function clearForm(){["x-id","x-nombre","x-desc"].forEach(id=>document.getElementById(id).value="");document.getElementById("x-err").style.display="none";}
+function openCreate(){clearForm();document.getElementById("modal-title").textContent="Nueva categoría";openModal("modal-main");}
+function openEdit(id){const c=all.find(x=>x.id_categoria===id);document.getElementById("x-id").value=c.id_categoria;document.getElementById("x-nombre").value=c.nombre;document.getElementById("x-desc").value=c.descripcion||"";document.getElementById("modal-title").textContent="Editar categoría";openModal("modal-main");}
+function openDel(id){delId=id;openModal("modal-del");}
+async function confirmDel(){try{await api.delete(`/categorias/${delId}`);showToast("Eliminada","success");closeModal("modal-del");load();}catch(e){showToast(e.message,"error");}}
+async function save(){const errDiv=document.getElementById("x-err");const id=document.getElementById("x-id").value;const body={nombre:document.getElementById("x-nombre").value.trim(),descripcion:document.getElementById("x-desc").value.trim()};
+if(!body.nombre){errDiv.textContent="Nombre obligatorio.";errDiv.style.display="block";return;}
+try{if(id)await api.put(`/categorias/${id}`,body);else await api.post("/categorias",body);showToast(id?"Actualizada":"Creada","success");closeModal("modal-main");load();}catch(e){errDiv.textContent=e.message;errDiv.style.display="block";}}
+load();
+</script>
+</body>
+</html>

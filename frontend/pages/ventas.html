@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Ventas — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+  <style>
+    .cart-item { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); }
+    .cart-item:last-child { border-bottom:none; }
+    .cart-total { text-align:right; font-size:18px; font-family:var(--font); color:var(--accent); margin-top:10px; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Ventas</h1>
+      <p>Historial y registro de ventas</p>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span style="color:var(--muted);font-size:13px;" id="total-ventas">Cargando...</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="downloadCSV('/reportes/exportar-ventas-csv','ventas.csv')">⬇ Exportar CSV</button>
+          <button class="btn btn-primary" onclick="openModal('modal-venta')">+ Nueva venta</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Empleado</th><th>Total</th><th>Detalle</th></tr></thead>
+          <tbody id="tbody-ventas"><tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal Nueva Venta -->
+<div class="modal-overlay" id="modal-venta">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header"><h3>Registrar venta</h3><button class="modal-close" onclick="closeModal('modal-venta');resetVenta()">✕</button></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cliente *</label>
+        <select id="v-cliente" class="form-control"><option value="">Seleccionar...</option></select>
+      </div>
+      <div class="form-group">
+        <label>Empleado *</label>
+        <select id="v-empleado" class="form-control"><option value="">Seleccionar...</option></select>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Agregar producto</div>
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div class="form-group" style="flex:1;margin-bottom:0;">
+          <select id="v-producto" class="form-control"><option value="">Seleccionar producto...</option></select>
+        </div>
+        <div class="form-group" style="width:80px;margin-bottom:0;">
+          <input id="v-cantidad" type="number" min="1" value="1" class="form-control" placeholder="Cant."/>
+        </div>
+        <button class="btn btn-success btn-sm" onclick="addToCart()">+ Agregar</button>
+      </div>
+    </div>
+    <div id="cart-items" style="min-height:40px;"></div>
+    <div class="cart-total" id="cart-total" style="display:none;"></div>
+    <div id="modal-venta-error" style="color:var(--danger);font-size:12px;margin-top:4px;display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-venta');resetVenta()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveVenta()">Registrar venta</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Detalle Venta -->
+<div class="modal-overlay" id="modal-detalle">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header"><h3 id="detalle-title">Detalle de venta</h3><button class="modal-close" onclick="closeModal('modal-detalle')">✕</button></div>
+    <div id="detalle-content"></div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+buildLayout("ventas");
+
+let cart = [];
+let productos = [];
+
+async function loadVentas() {
+  try {
+    const ventas = await api.get("/ventas");
+    document.getElementById("total-ventas").textContent = `${ventas.length} ventas registradas`;
+    const tbody = document.getElementById("tbody-ventas");
+    if (!ventas.length) { tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Sin ventas</td></tr>`; return; }
+    tbody.innerHTML = ventas.map(v => `
+      <tr>
+        <td><span class="badge badge-blue">#${v.id_venta}</span></td>
+        <td>${fmtDate(v.fecha)}</td>
+        <td>${v.cliente}</td>
+        <td>${v.empleado}</td>
+        <td style="font-family:var(--font)">${fmtMoney(v.total)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="verDetalle(${v.id_venta})">Ver</button></td>
+      </tr>
+    `).join("");
+  } catch(e) { showToast("Error: "+e.message,"error"); }
+}
+
+async function loadSelects() {
+  const [clientes, empleados, prods] = await Promise.all([
+    api.get("/clientes"), api.get("/empleados"), api.get("/productos")
+  ]);
+  productos = prods;
+  const cSel = document.getElementById("v-cliente");
+  const eSel = document.getElementById("v-empleado");
+  const pSel = document.getElementById("v-producto");
+  clientes.forEach(c  => cSel.innerHTML += `<option value="${c.id_cliente}">${c.nombre} (${c.DPI})</option>`);
+  empleados.forEach(e => eSel.innerHTML += `<option value="${e.id_empleado}">${e.nombre}</option>`);
+  prods.forEach(p     => pSel.innerHTML += `<option value="${p.id_producto}" data-precio="${p.precio_unitario}" data-stock="${p.stock}">${p.nombre} — Q${p.precio_unitario} (stock: ${p.stock})</option>`);
+}
+
+function addToCart() {
+  const sel      = document.getElementById("v-producto");
+  const qty      = parseInt(document.getElementById("v-cantidad").value);
+  const id       = parseInt(sel.value);
+  const option   = sel.options[sel.selectedIndex];
+  const precio   = parseFloat(option.dataset.precio);
+  const stock    = parseInt(option.dataset.stock);
+  const nombre   = option.text.split(" — ")[0];
+  const errDiv   = document.getElementById("modal-venta-error");
+
+  errDiv.style.display = "none";
+  if (!id || isNaN(qty) || qty < 1) { errDiv.textContent = "Selecciona un producto y cantidad válida."; errDiv.style.display="block"; return; }
+
+  // Verificar si ya está en el carrito
+  const existing = cart.find(c => c.producto_id === id);
+  const totalQty = (existing ? existing.cantidad : 0) + qty;
+  if (totalQty > stock) { errDiv.textContent = `Stock insuficiente. Disponible: ${stock}`; errDiv.style.display="block"; return; }
+
+  if (existing) existing.cantidad += qty;
+  else cart.push({ producto_id: id, nombre, precio, cantidad: qty });
+
+  renderCart();
+}
+
+function removeFromCart(idx) { cart.splice(idx,1); renderCart(); }
+
+function renderCart() {
+  const container = document.getElementById("cart-items");
+  const totalEl   = document.getElementById("cart-total");
+  if (!cart.length) {
+    container.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;">No hay productos en el carrito</p>`;
+    totalEl.style.display = "none";
+    return;
+  }
+  let total = 0;
+  container.innerHTML = cart.map((item, i) => {
+    const sub = item.precio * item.cantidad;
+    total += sub;
+    return `<div class="cart-item">
+      <span style="flex:1;font-size:13px;">${item.nombre}</span>
+      <span style="color:var(--muted);font-size:12px;">x${item.cantidad}</span>
+      <span style="font-family:var(--font);min-width:80px;text-align:right;">${fmtMoney(sub)}</span>
+      <button class="btn btn-danger btn-sm" onclick="removeFromCart(${i})">✕</button>
+    </div>`;
+  }).join("");
+  totalEl.textContent = "Total: " + fmtMoney(total);
+  totalEl.style.display = "block";
+}
+
+function resetVenta() {
+  cart = [];
+  renderCart();
+  document.getElementById("v-cliente").value = "";
+  document.getElementById("v-empleado").value = "";
+  document.getElementById("modal-venta-error").style.display = "none";
+}
+
+async function saveVenta() {
+  const errDiv = document.getElementById("modal-venta-error");
+  errDiv.style.display = "none";
+  const cliente_id  = parseInt(document.getElementById("v-cliente").value);
+  const empleado_id = parseInt(document.getElementById("v-empleado").value);
+
+  if (!cliente_id || !empleado_id) { errDiv.textContent="Selecciona cliente y empleado."; errDiv.style.display="block"; return; }
+  if (!cart.length) { errDiv.textContent="Agrega al menos un producto."; errDiv.style.display="block"; return; }
+
+  try {
+    await api.post("/ventas", { cliente_id, empleado_id, items: cart.map(c=>({producto_id:c.producto_id,cantidad:c.cantidad})) });
+    showToast("Venta registrada correctamente","success");
+    closeModal("modal-venta");
+    resetVenta();
+    loadVentas();
+  } catch(e) {
+    errDiv.textContent = e.message;
+    errDiv.style.display = "block";
+  }
+}
+
+async function verDetalle(id) {
+  try {
+    const v = await api.get(`/ventas/${id}`);
+    document.getElementById("detalle-title").textContent = `Venta #${v.id_venta}`;
+    document.getElementById("detalle-content").innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><small style="color:var(--muted)">Cliente</small><div>${v.cliente}</div></div>
+        <div><small style="color:var(--muted)">DPI</small><div>${v.DPI}</div></div>
+        <div><small style="color:var(--muted)">Empleado</small><div>${v.empleado}</div></div>
+        <div><small style="color:var(--muted)">Fecha</small><div>${fmtDatetime(v.fecha)}</div></div>
+      </div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px">Producto</th><th style="text-align:right;padding:6px">Cant.</th><th style="text-align:right;padding:6px">Precio</th><th style="text-align:right;padding:6px">Subtotal</th></tr></thead>
+        <tbody>${(v.detalle||[]).map(d=>`<tr><td style="padding:6px">${d.producto}</td><td style="text-align:right;padding:6px">${d.cantidad}</td><td style="text-align:right;padding:6px">${fmtMoney(d.precio_unitario)}</td><td style="text-align:right;padding:6px">${fmtMoney(d.subtotal)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td colspan="3" style="text-align:right;padding:8px;font-weight:600">Total</td><td style="text-align:right;padding:8px;font-family:var(--font);color:var(--accent)">${fmtMoney(v.total)}</td></tr></tfoot>
+      </table>`;
+    openModal("modal-detalle");
+  } catch(e) { showToast("Error: "+e.message,"error"); }
+}
+
+loadSelects();
+loadVentas();
+</script>
+</body>
+</html>
