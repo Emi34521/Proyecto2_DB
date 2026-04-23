@@ -9,6 +9,7 @@ const SECRET = process.env.JWT_SECRET || "jwt_secret_dev";
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   const { correo, contrasena } = req.body;
+  console.log("LOGIN ATTEMPT:", { correo, contrasena });
   if (!correo || !contrasena)
     return res.status(400).json({ error: "Correo y contraseña requeridos" });
 

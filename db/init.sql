@@ -267,7 +267,7 @@ INSERT INTO empleado (nombre, cargo, email, telefono) VALUES
 -- Contraseñas: "Admin1234" hasheada con bcrypt rounds=10
 INSERT INTO usuario (nombre, correo, telefono, contrasena_hash, tipo_usuario) VALUES
   ('Admin Principal',  'admin@tienda.com',    '5500-9001',
-   '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lh3y', 'admin'),
+   '$2a$10$Ph.nT3yCfM0rjbRQD09Ay.3aG46beTwu1M41pOR6wH4x6ADCZ0ZvK', 'admin'),
   ('Roberto Vendedor', 'vendedor@tienda.com', '5500-9002',
    '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lh3y', 'vendedor'),
   ('David Bodega',     'bodega@tienda.com',   '5500-9003',

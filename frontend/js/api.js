@@ -39,7 +39,6 @@ async function apiFetch(path, options = {}) {
     ...options,
   });
 
-  // Si es un CSV (blob), devolverlo directo
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("text/csv")) {
     if (!res.ok) throw new Error("Error al exportar");
@@ -47,11 +46,14 @@ async function apiFetch(path, options = {}) {
   }
 
   const data = await res.json();
-  if (res.status === 401) {
+
+  // Solo redirigir a login si el 401 NO viene del endpoint de login
+  if (res.status === 401 && !path.includes("/auth/login")) {
     clearSession();
     window.location.href = "/login.html";
     throw new Error("Sesión expirada");
   }
+
   if (!res.ok) throw new Error(data.error || "Error en la solicitud");
   return data;
 }

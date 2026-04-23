@@ -1,48 +1,170 @@
-require("dotenv").config();
-const express = require("express");
-const cors    = require("cors");
-const path    = require("path");
-const { pool } = require("./db");
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dashboard — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p>Resumen general del negocio</p>
+    </div>
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+    <!-- Stat cards -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card blue">
+        <div class="label">Total ventas</div>
+        <div class="value" id="stat-ventas">—</div>
+        <div class="sub" id="stat-monto">cargando...</div>
+      </div>
+      <div class="stat-card green">
+        <div class="label">Productos</div>
+        <div class="value" id="stat-productos">—</div>
+        <div class="sub">en catálogo</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="label">Clientes</div>
+        <div class="value" id="stat-clientes">—</div>
+        <div class="sub">registrados</div>
+      </div>
+      <div class="stat-card red">
+        <div class="label">Stock crítico</div>
+        <div class="value" id="stat-stock">—</div>
+        <div class="sub">productos ≤ 5 uds.</div>
+      </div>
+    </div>
 
-app.use(cors());
-app.use(express.json());
+    <!-- Dos columnas -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
 
-// ── API routes ──────────────────────────────────────────────
-app.use("/api/auth",        require("./routes/auth"));
-app.use("/api/categorias",  require("./routes/categorias"));
-app.use("/api/proveedores", require("./routes/proveedores"));
-app.use("/api/productos",   require("./routes/productos"));
-app.use("/api/clientes",    require("./routes/clientes"));
-app.use("/api/empleados",   require("./routes/empleados"));
-app.use("/api/ventas",      require("./routes/ventas"));
-app.use("/api/compras",     require("./routes/compras"));
-app.use("/api/reportes",    require("./routes/reportes"));
-app.use("/api/usuarios",    require("./routes/usuarios"));
+      <!-- Últimas ventas -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Últimas ventas</h2>
+          <a href="/pages/ventas.html" class="btn btn-ghost btn-sm">Ver todas</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Cliente</th><th>Total</th><th>Fecha</th></tr></thead>
+            <tbody id="tbody-ultimas"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+      </div>
 
-// ── Health check ────────────────────────────────────────────
-app.get("/health", async (req, res) => {
+      <!-- Stock crítico -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Stock crítico</h2>
+          <a href="/pages/reportes.html" class="btn btn-ghost btn-sm">Ver reporte</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Producto</th><th>Stock</th><th>Proveedor</th></tr></thead>
+            <tbody id="tbody-stock"><tr><td colspan="3" class="empty-state"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Top productos -->
+    <div class="card" style="margin-top:20px;">
+      <div class="card-header">
+        <h2>Top 5 productos más vendidos</h2>
+        <a href="/pages/reportes.html" class="btn btn-ghost btn-sm">Ver reportes</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Producto</th><th>Categoría</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead>
+          <tbody id="tbody-top"><tr><td colspan="5" class="empty-state"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/layout.js"></script>
+<script>
+buildLayout("dashboard");
+
+async function loadDashboard() {
   try {
-    await pool.query("SELECT 1");
-    res.json({ status: "ok", db: "connected" });
-  } catch (e) {
-    res.status(500).json({ status: "error", message: e.message });
+    // Resumen general
+    const resumen = await api.get("/reportes/resumen");
+    document.getElementById("stat-ventas").textContent   = resumen.ventas.total;
+    document.getElementById("stat-monto").textContent    = fmtMoney(resumen.ventas.monto) + " en ingresos";
+    document.getElementById("stat-productos").textContent = resumen.productos.total;
+    document.getElementById("stat-clientes").textContent  = resumen.clientes.total;
+    document.getElementById("stat-stock").textContent     = resumen.stock_bajo.total;
+  } catch(e) {
+    showToast("Error cargando resumen: " + e.message, "error");
   }
-});
 
-// ── Servir frontend estático ─────────────────────────────────
-// En el contenedor: /app/frontend  (copiado por el Dockerfile)
-const frontendPath = path.join(__dirname, "..", "frontend");
-app.use(express.static(frontendPath));
+  try {
+    // Últimas ventas
+    const ventas = await api.get("/ventas");
+    const ultimas = ventas.slice(0, 6);
+    const tbody = document.getElementById("tbody-ultimas");
+    if (!ultimas.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Sin ventas</td></tr>`;
+    } else {
+      tbody.innerHTML = ultimas.map(v => `<tr>
+        <td><span class="badge badge-blue">#${v.id_venta}</span></td>
+        <td>${v.cliente}</td>
+        <td style="font-family:var(--font)">${fmtMoney(v.total)}</td>
+        <td>${fmtDate(v.fecha)}</td>
+      </tr>`).join("");
+    }
+  } catch(e) {
+    document.getElementById("tbody-ultimas").innerHTML = `<tr><td colspan="4" class="empty-state">Error</td></tr>`;
+  }
 
-// SPA fallback: rutas no-API devuelven login.html o index.html
-app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
+  try {
+    // Stock crítico
+    const stock = await api.get("/reportes/stock-bajo");
+    const tbody = document.getElementById("tbody-stock");
+    if (!stock.length) {
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:var(--success)">✓ Sin productos críticos</td></tr>`;
+    } else {
+      tbody.innerHTML = stock.map(p => `<tr>
+        <td>${p.nombre}</td>
+        <td><span class="badge badge-red">${p.stock}</span></td>
+        <td>${p.proveedor}</td>
+      </tr>`).join("");
+    }
+  } catch(e) {
+    document.getElementById("tbody-stock").innerHTML = `<tr><td colspan="3" class="empty-state">Error</td></tr>`;
+  }
 
-app.listen(PORT, () => {
-  console.log(`Servidor en http://localhost:${PORT}`);
-  console.log(`Frontend:   ${frontendPath}`);
-});
+  try {
+    // Top productos
+    const top = await api.get("/reportes/productos-mas-vendidos");
+    const tbody = document.getElementById("tbody-top");
+    if (!top.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Sin datos</td></tr>`;
+    } else {
+      tbody.innerHTML = top.slice(0, 5).map((p, i) => `<tr>
+        <td><span class="badge badge-purple">#${i + 1}</span></td>
+        <td><strong>${p.producto}</strong></td>
+        <td><span class="badge badge-blue">${p.categoria}</span></td>
+        <td>${p.unidades_vendidas}</td>
+        <td style="font-family:var(--font)">${fmtMoney(p.ingresos_totales)}</td>
+      </tr>`).join("");
+    }
+  } catch(e) {
+    document.getElementById("tbody-top").innerHTML = `<tr><td colspan="5" class="empty-state">Error</td></tr>`;
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
