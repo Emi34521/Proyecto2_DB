@@ -1,9 +1,18 @@
-FROM nginx:alpine
-
-# Copiar archivos estáticos
-COPY . /usr/share/nginx/html
-
-# Copiar configuración de nginx para proxy inverso al backend
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
+FROM node:20-alpine
+ 
+WORKDIR /app
+ 
+# Instalar dependencias
+COPY backend/package*.json ./
+RUN npm install
+ 
+# Copiar todo el backend
+COPY backend/src ./src
+ 
+# Copiar frontend (para que Express lo sirva como estático)
+COPY frontend ./frontend
+ 
+EXPOSE 3000
+ 
+CMD ["node", "src/index.js"]
+ 

@@ -20,8 +20,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: tienda_backend
     restart: unless-stopped
     depends_on:
@@ -34,24 +34,9 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
       PORT: ${BACKEND_PORT}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: tienda_frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    environment:
-      BACKEND_URL: http://backend:${BACKEND_PORT}
-    ports:
-      - "${FRONTEND_PORT}:80"
 
 volumes:
   postgres_data:

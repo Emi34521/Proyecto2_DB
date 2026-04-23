@@ -1,147 +1,48 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Dashboard — Tienda</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="css/style.css"/>
-</head>
-<body>
-<div class="app-layout">
-  <aside class="sidebar" id="sidebar"></aside>
-  <main class="main-content">
-    <div class="page-header">
-      <h1>Dashboard</h1>
-      <p>Resumen general del sistema</p>
-    </div>
+require("dotenv").config();
+const express = require("express");
+const cors    = require("cors");
+const path    = require("path");
+const { pool } = require("./db");
 
-    <div class="stats-grid">
-      <div class="stat-card green">
-        <div class="label">Ventas totales</div>
-        <div class="value" id="stat-ventas">—</div>
-        <div class="sub">registradas en sistema</div>
-      </div>
-      <div class="stat-card blue">
-        <div class="label">Ingresos totales</div>
-        <div class="value" id="stat-monto">—</div>
-        <div class="sub">suma de todas las ventas</div>
-      </div>
-      <div class="stat-card purple">
-        <div class="label">Productos</div>
-        <div class="value" id="stat-productos">—</div>
-        <div class="sub">en catálogo</div>
-      </div>
-      <div class="stat-card blue">
-        <div class="label">Clientes</div>
-        <div class="value" id="stat-clientes">—</div>
-        <div class="sub">registrados</div>
-      </div>
-      <div class="stat-card red">
-        <div class="label">Stock bajo</div>
-        <div class="value" id="stat-stockbajo">—</div>
-        <div class="sub">productos con ≤ 5 unidades</div>
-      </div>
-    </div>
+const app  = express();
+const PORT = process.env.PORT || 3000;
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-      <!-- Últimas ventas -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Últimas ventas</h2>
-          <a href="/pages/ventas.html" class="btn btn-ghost btn-sm">Ver todas</a>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th></tr></thead>
-            <tbody id="tbl-ultimas-ventas"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody>
-          </table>
-        </div>
-      </div>
+app.use(cors());
+app.use(express.json());
 
-      <!-- Stock crítico -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Stock crítico</h2>
-          <a href="/pages/reportes.html" class="btn btn-ghost btn-sm">Ver reporte</a>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Producto</th><th>Stock</th><th>Categoría</th></tr></thead>
-            <tbody id="tbl-stock-bajo"><tr><td colspan="3" class="empty-state"><span class="spinner"></span></td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+// ── API routes ──────────────────────────────────────────────
+app.use("/api/auth",        require("./routes/auth"));
+app.use("/api/categorias",  require("./routes/categorias"));
+app.use("/api/proveedores", require("./routes/proveedores"));
+app.use("/api/productos",   require("./routes/productos"));
+app.use("/api/clientes",    require("./routes/clientes"));
+app.use("/api/empleados",   require("./routes/empleados"));
+app.use("/api/ventas",      require("./routes/ventas"));
+app.use("/api/compras",     require("./routes/compras"));
+app.use("/api/reportes",    require("./routes/reportes"));
+app.use("/api/usuarios",    require("./routes/usuarios"));
 
-    <!-- Productos más vendidos -->
-    <div class="card" style="margin-top:20px;">
-      <div class="card-header">
-        <h2>Top 5 productos más vendidos</h2>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>#</th><th>Producto</th><th>Categoría</th><th>Unidades vendidas</th><th>Ingresos</th></tr></thead>
-          <tbody id="tbl-top-productos"><tr><td colspan="5" class="empty-state"><span class="spinner"></span></td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </main>
-</div>
-
-<script src="js/api.js"></script>
-<script src="js/layout.js"></script>
-<script>
-buildLayout("dashboard");
-
-async function loadDashboard() {
+// ── Health check ────────────────────────────────────────────
+app.get("/health", async (req, res) => {
   try {
-    const resumen = await api.get("/reportes/resumen");
-    document.getElementById("stat-ventas").textContent    = resumen.ventas.total;
-    document.getElementById("stat-monto").textContent     = fmtMoney(resumen.ventas.monto);
-    document.getElementById("stat-productos").textContent = resumen.productos.total;
-    document.getElementById("stat-clientes").textContent  = resumen.clientes.total;
-    document.getElementById("stat-stockbajo").textContent = resumen.stock_bajo.total;
-  } catch(e) { showToast("Error cargando resumen: "+e.message,"error"); }
+    await pool.query("SELECT 1");
+    res.json({ status: "ok", db: "connected" });
+  } catch (e) {
+    res.status(500).json({ status: "error", message: e.message });
+  }
+});
 
-  try {
-    const ventas = await api.get("/ventas");
-    renderTable("tbl-ultimas-ventas", ventas.slice(0,8), [
-      { key:"id_venta" },
-      { key:"fecha", render: r => fmtDate(r.fecha) },
-      { key:"cliente" },
-      { key:"total", render: r => fmtMoney(r.total) },
-    ]);
-  } catch(e) {}
+// ── Servir frontend estático ─────────────────────────────────
+// En el contenedor: /app/frontend  (copiado por el Dockerfile)
+const frontendPath = path.join(__dirname, "..", "frontend");
+app.use(express.static(frontendPath));
 
-  try {
-    const stock = await api.get("/reportes/stock-bajo");
-    renderTable("tbl-stock-bajo", stock.slice(0,8), [
-      { key:"nombre" },
-      { key:"stock", render: r => `<span class="badge badge-red">${r.stock}</span>` },
-      { key:"categoria" },
-    ]);
-  } catch(e) {}
+// SPA fallback: rutas no-API devuelven login.html o index.html
+app.get("*", (req, res) => {
+  res.sendFile(path.join(frontendPath, "index.html"));
+});
 
-  try {
-    const top = await api.get("/reportes/productos-mas-vendidos");
-    renderTable("tbl-top-productos", top.slice(0,5), [
-      { key:"_rank", render:(r,i) => `<span class="badge badge-purple">#${i+1}</span>` },
-      { key:"producto" },
-      { key:"categoria" },
-      { key:"unidades_vendidas" },
-      { key:"ingresos_totales", render: r => fmtMoney(r.ingresos_totales) },
-    ]);
-    // Patch index into rows
-    const tbody = document.getElementById("tbl-top-productos");
-    [...tbody.querySelectorAll("tr")].forEach((tr,i) => {
-      const badge = tr.querySelector(".badge-purple");
-      if(badge) badge.textContent = `#${i+1}`;
-    });
-  } catch(e) {}
-}
-
-loadDashboard();
-</script>
-</body>
-</html>
+app.listen(PORT, () => {
+  console.log(`Servidor en http://localhost:${PORT}`);
+  console.log(`Frontend:   ${frontendPath}`);
+});
