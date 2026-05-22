@@ -1,91 +1,120 @@
+// routes/productos.js — ORM + stored procedure para creación
 const express  = require("express");
 const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { Producto, Categoria, Proveedor } = require("../models");
+const sequelize = require("../config/database");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-// GET — JOIN producto + categoria + proveedor
+// GET all — con JOIN vía ORM (include)
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const r = await pool.query(`
-      SELECT p.id_producto, p.nombre, p.descripcion,
-             p.precio_unitario, p.stock,
-             c.id_categoria, c.nombre  AS categoria,
-             pr.id_proveedor, pr.nombre AS proveedor
-      FROM   producto   p
-      JOIN   categoria  c  ON p.categoria_id = c.id_categoria
-      JOIN   proveedor  pr ON p.proveedor_id = pr.id_proveedor
-      ORDER  BY p.nombre
-    `);
-    res.json(r.rows);
+    // ORM: findAll con includes (JOIN)
+    const productos = await Producto.findAll({
+      include: [
+        { model: Categoria, as: "categoria", attributes: ["id_categoria", "nombre"] },
+        { model: Proveedor, as: "proveedor", attributes: ["id_proveedor", "nombre"] },
+      ],
+      order: [["nombre", "ASC"]],
+    });
+    res.json(productos);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET one
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
-    const r = await pool.query(
-      `SELECT p.*, c.nombre AS categoria, pr.nombre AS proveedor
-       FROM   producto p
-       JOIN   categoria  c  ON p.categoria_id = c.id_categoria
-       JOIN   proveedor  pr ON p.proveedor_id = pr.id_proveedor
-       WHERE  p.id_producto = $1`,
-      [req.params.id]
-    );
-    if (r.rowCount === 0) return res.status(404).json({ error: "No encontrado" });
-    res.json(r.rows[0]);
+    // ORM: findByPk con includes
+    const p = await Producto.findByPk(req.params.id, {
+      include: [
+        { model: Categoria, as: "categoria", attributes: ["id_categoria", "nombre"] },
+        { model: Proveedor, as: "proveedor", attributes: ["id_proveedor", "nombre"] },
+      ],
+    });
+    if (!p) return res.status(404).json({ error: "Producto no encontrado" });
+    res.json(p);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post("/", authMiddleware, async (req, res) => {
+// POST — admin — usa stored procedure sp_crear_producto
+router.post("/", authMiddleware, requireRole("admin"), async (req, res) => {
   const { nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id } = req.body;
-  const client = await pool.connect();
+  const t = await sequelize.transaction();
   try {
-    await client.query("BEGIN");
-    const r = await client.query(
-      `INSERT INTO producto (nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id]
+    const [result] = await sequelize.query(
+      `CALL sp_crear_producto(:nombre, :desc, :precio, :stock, :cat_id, :prov_id, NULL)`,
+      {
+        replacements: {
+          nombre,
+          desc:    descripcion    || null,
+          precio:  precio_unitario,
+          stock:   stock          || 0,
+          cat_id:  categoria_id,
+          prov_id: proveedor_id,
+        },
+        transaction: t,
+      }
     );
-    await client.query("COMMIT");
-    res.status(201).json(r.rows[0]);
+    await t.commit();
+
+    const productoId = result[0]?.p_producto_id;
+    const nuevo = await Producto.findByPk(productoId, {
+      include: [
+        { model: Categoria, as: "categoria", attributes: ["id_categoria", "nombre"] },
+        { model: Proveedor, as: "proveedor", attributes: ["id_proveedor", "nombre"] },
+      ],
+    });
+    res.status(201).json(nuevo);
   } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: e.message });
-  } finally { client.release(); }
+    await t.rollback();
+    res.status(400).json({ error: e.message });
+  }
 });
 
-router.put("/:id", authMiddleware, async (req, res) => {
+// PUT — admin y bodeguero — ORM
+router.put("/:id", authMiddleware, requireRole("admin", "bodeguero"), async (req, res) => {
   const { nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id } = req.body;
-  const client = await pool.connect();
+  const t = await sequelize.transaction();
   try {
-    await client.query("BEGIN");
-    const r = await client.query(
-      `UPDATE producto
-       SET nombre=$1, descripcion=$2, precio_unitario=$3, stock=$4,
-           categoria_id=$5, proveedor_id=$6, updated_at=NOW()
-       WHERE id_producto=$7 RETURNING *`,
-      [nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id, req.params.id]
-    );
-    if (r.rowCount === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "No encontrado" }); }
-    await client.query("COMMIT");
-    res.json(r.rows[0]);
+    const p = await Producto.findByPk(req.params.id, { transaction: t });
+    if (!p) { await t.rollback(); return res.status(404).json({ error: "Producto no encontrado" }); }
+
+    // bodeguero solo puede actualizar stock
+    if (req.user.tipo === "bodeguero") {
+      await p.update({ stock, updated_at: new Date() }, { transaction: t });
+    } else {
+      await p.update(
+        { nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id, updated_at: new Date() },
+        { transaction: t }
+      );
+    }
+    await t.commit();
+
+    const actualizado = await Producto.findByPk(req.params.id, {
+      include: [
+        { model: Categoria, as: "categoria", attributes: ["id_categoria", "nombre"] },
+        { model: Proveedor, as: "proveedor", attributes: ["id_proveedor", "nombre"] },
+      ],
+    });
+    res.json(actualizado);
   } catch (e) {
-    await client.query("ROLLBACK");
+    await t.rollback();
     res.status(500).json({ error: e.message });
-  } finally { client.release(); }
+  }
 });
 
-router.delete("/:id", authMiddleware, async (req, res) => {
-  const client = await pool.connect();
+// DELETE — solo admin — ORM
+router.delete("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await client.query("BEGIN");
-    const r = await client.query(`DELETE FROM producto WHERE id_producto=$1 RETURNING id_producto`, [req.params.id]);
-    if (r.rowCount === 0) { await client.query("ROLLBACK"); return res.status(404).json({ error: "No encontrado" }); }
-    await client.query("COMMIT");
-    res.json({ message: "Eliminado" });
+    const p = await Producto.findByPk(req.params.id, { transaction: t });
+    if (!p) { await t.rollback(); return res.status(404).json({ error: "Producto no encontrado" }); }
+    await p.destroy({ transaction: t });
+    await t.commit();
+    res.json({ message: "Producto eliminado" });
   } catch (e) {
-    await client.query("ROLLBACK");
+    await t.rollback();
     res.status(500).json({ error: e.message });
-  } finally { client.release(); }
+  }
 });
 
 module.exports = router;

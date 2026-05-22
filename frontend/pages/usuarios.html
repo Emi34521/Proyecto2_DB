@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Usuarios — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div class="page-header"><h1>Usuarios</h1><p>Gestión de acceso al sistema</p></div>
+    <div class="card">
+      <div class="card-header">
+        <span></span>
+        <button class="btn btn-primary" id="btn-nuevo" onclick="openCreate()">+ Nuevo usuario</button>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>ID</th><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Rol</th><th>Acciones</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal-main">
+  <div class="modal">
+    <div class="modal-header"><h3 id="modal-title">Nuevo usuario</h3><button class="modal-close" onclick="closeModal('modal-main')">✕</button></div>
+    <input type="hidden" id="u-id"/>
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input id="u-nombre" class="form-control"/></div>
+      <div class="form-group"><label>Correo *</label><input id="u-correo" type="email" class="form-control"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Teléfono</label><input id="u-tel" class="form-control"/></div>
+      <div class="form-group">
+        <label>Rol *</label>
+        <select id="u-tipo" class="form-control">
+          <option value="admin">admin</option>
+          <option value="vendedor">vendedor</option>
+          <option value="bodeguero">bodeguero</option>
+          <option value="supervisor">supervisor</option>
+          <option value="consulta">consulta</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label id="pass-label">Contraseña *</label><input id="u-pass" type="password" class="form-control" placeholder="Mínimo 6 caracteres"/></div>
+    <div id="u-err" style="color:var(--danger);font-size:12px;display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-main')">Cancelar</button>
+      <button class="btn btn-primary" onclick="save()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-del">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-header"><h3>Eliminar usuario</h3><button class="modal-close" onclick="closeModal('modal-del')">✕</button></div>
+    <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación de este usuario?</p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-del')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmDel()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api.js"></script><script src="../js/layout.js"></script>
+<script>
+buildLayout("usuarios");
+if (!guardPage("usuarios", "ver")) { /* redirige */ }
+
+const ROL_BADGE = {
+  admin:"badge-blue", vendedor:"badge-green",
+  bodeguero:"badge-orange", supervisor:"badge-purple", consulta:"badge-red"
+};
+
+let all=[], delId=null;
+const esAdmin = canDo("usuarios","crear");
+
+// Ocultar botón nuevo si no es admin
+if (!esAdmin) document.getElementById("btn-nuevo").style.display = "none";
+
+async function load(){
+  try{ all = await api.get("/usuarios"); render(all); }
+  catch(e){ showToast(e.message,"error"); }
+}
+
+function render(rows){
+  const tbody = document.getElementById("tbody");
+  if(!rows.length){ tbody.innerHTML=`<tr><td colspan="6" class="empty-state">Sin usuarios</td></tr>`; return; }
+  tbody.innerHTML = rows.map(u=>`<tr>
+    <td><span class="badge badge-blue">#${u.id_usuario}</span></td>
+    <td><strong>${u.nombre}</strong></td>
+    <td style="font-family:var(--font);font-size:12px">${u.correo}</td>
+    <td>${u.telefono||"—"}</td>
+    <td><span class="badge ${ROL_BADGE[u.tipo_usuario]||'badge-blue'}">${u.tipo_usuario}</span></td>
+    <td>
+      ${esAdmin ? `<button class="btn btn-ghost btn-sm" onclick="openEdit(${u.id_usuario})">Editar</button>
+      <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${u.id_usuario})">Eliminar</button>` : "—"}
+    </td></tr>`).join("");
+}
+
+function clearForm(){
+  ["u-id","u-nombre","u-correo","u-tel","u-pass"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("u-tipo").value="vendedor";
+  document.getElementById("u-err").style.display="none";
+}
+function openCreate(){
+  clearForm();
+  document.getElementById("modal-title").textContent="Nuevo usuario";
+  document.getElementById("pass-label").textContent="Contraseña *";
+  openModal("modal-main");
+}
+function openEdit(id){
+  const u = all.find(x=>x.id_usuario===id);
+  document.getElementById("u-id").value    = u.id_usuario;
+  document.getElementById("u-nombre").value = u.nombre;
+  document.getElementById("u-correo").value = u.correo;
+  document.getElementById("u-tel").value   = u.telefono||"";
+  document.getElementById("u-tipo").value  = u.tipo_usuario;
+  document.getElementById("u-pass").value  = "";
+  document.getElementById("pass-label").textContent = "Contraseña (dejar vacío para no cambiar)";
+  document.getElementById("modal-title").textContent="Editar usuario";
+  openModal("modal-main");
+}
+function openDel(id){ delId=id; openModal("modal-del"); }
+
+async function confirmDel(){
+  try{ await api.delete(`/usuarios/${delId}`); showToast("Usuario eliminado","success"); closeModal("modal-del"); load(); }
+  catch(e){ showToast(e.message,"error"); }
+}
+
+async function save(){
+  const errDiv = document.getElementById("u-err");
+  const id = document.getElementById("u-id").value;
+  const body = {
+    nombre:       document.getElementById("u-nombre").value.trim(),
+    correo:       document.getElementById("u-correo").value.trim(),
+    telefono:     document.getElementById("u-tel").value.trim(),
+    tipo_usuario: document.getElementById("u-tipo").value,
+    contrasena:   document.getElementById("u-pass").value,
+  };
+  if(!body.nombre||!body.correo){ errDiv.textContent="Nombre y correo son obligatorios."; errDiv.style.display="block"; return; }
+  if(!id && !body.contrasena){ errDiv.textContent="La contraseña es obligatoria al crear."; errDiv.style.display="block"; return; }
+  try{
+    if(id) await api.put(`/usuarios/${id}`,body);
+    else   await api.post("/usuarios",body);
+    showToast(id?"Actualizado":"Creado","success");
+    closeModal("modal-main"); load();
+  }catch(e){ errDiv.textContent=e.message; errDiv.style.display="block"; }
+}
+
+load();
+</script>
+</body>
+</html>

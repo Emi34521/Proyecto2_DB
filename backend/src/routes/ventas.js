@@ -1,104 +1,109 @@
-const express  = require("express");
-const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+// routes/ventas.js — usa stored procedures para registrar y cancelar
+const express   = require("express");
+const router    = express.Router();
+const sequelize = require("../config/database");
+const { Venta, Cliente, Empleado, DetalleVenta, Producto } = require("../models");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-// GET /api/ventas  — JOIN venta + cliente + empleado
-router.get("/", authMiddleware, async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT v.id_venta, v.fecha, v.total,
-             c.nombre AS cliente, c.DPI,
-             e.nombre AS empleado, e.cargo
-      FROM   venta    v
-      JOIN   cliente  c ON v.cliente_id  = c.id_cliente
-      JOIN   empleado e ON v.empleado_id = e.id_empleado
-      ORDER  BY v.fecha DESC
-    `);
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// GET all
+router.get("/", authMiddleware,
+  requireRole("admin", "vendedor", "supervisor", "consulta", "bodeguero"),
+  async (req, res) => {
+    try {
+      const ventas = await Venta.findAll({
+        include: [
+          { model: Cliente,  as: "cliente",  attributes: ["nombre", "dpi"] },
+          { model: Empleado, as: "empleado", attributes: ["nombre", "cargo"] },
+        ],
+        order: [["fecha", "DESC"]],
+      });
+      res.json(ventas);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
 
-// GET /api/ventas/:id — detalle usando VIEW v_ventas_detalle
-router.get("/:id", authMiddleware, async (req, res) => {
-  try {
-    const cabecera = await pool.query(
-      `SELECT v.*, c.nombre AS cliente, c.DPI, e.nombre AS empleado
-       FROM venta v
-       JOIN cliente  c ON v.cliente_id  = c.id_cliente
-       JOIN empleado e ON v.empleado_id = e.id_empleado
-       WHERE v.id_venta = $1`,
-      [req.params.id]
-    );
-    if (cabecera.rowCount === 0) return res.status(404).json({ error: "No encontrada" });
+// GET one con detalle
+router.get("/:id", authMiddleware,
+  requireRole("admin", "vendedor", "supervisor", "consulta", "bodeguero"),
+  async (req, res) => {
+    try {
+      const venta = await Venta.findByPk(req.params.id, {
+        include: [
+          { model: Cliente,     as: "cliente",  attributes: ["nombre", "dpi"] },
+          { model: Empleado,    as: "empleado", attributes: ["nombre", "cargo"] },
+          {
+            model: DetalleVenta, as: "detalle",
+            include: [{ model: Producto, as: "producto", attributes: ["nombre"] }],
+          },
+        ],
+      });
+      if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+      res.json(venta);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
 
-    // Usa la VIEW para el detalle de líneas
-    const detalle = await pool.query(
-      `SELECT producto, cantidad, precio_unitario, subtotal
-       FROM   v_ventas_detalle
-       WHERE  id_venta = $1`,
-      [req.params.id]
-    );
-    res.json({ ...cabecera.rows[0], detalle: detalle.rows });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// POST — vendedor y admin — invoca sp_registrar_venta (SP con OUT + transacción)
+router.post("/", authMiddleware,
+  requireRole("admin", "vendedor"),
+  async (req, res) => {
+    const { cliente_id, empleado_id, items } = req.body;
+    if (!items || items.length === 0)
+      return res.status(400).json({ error: "Debe incluir al menos un producto" });
 
-// POST /api/ventas  — TRANSACCIÓN EXPLÍCITA con ROLLBACK en error
-router.post("/", authMiddleware, async (req, res) => {
-  const { cliente_id, empleado_id, items } = req.body;
-  if (!items || items.length === 0)
-    return res.status(400).json({ error: "La venta debe incluir al menos un producto" });
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    let total = 0;
-
-    // Verificar stock y calcular total — FOR UPDATE evita condición de carrera
-    for (const item of items) {
-      const prod = await client.query(
-        `SELECT precio_unitario, stock FROM producto WHERE id_producto = $1 FOR UPDATE`,
-        [item.producto_id]
+    const t = await sequelize.transaction();
+    try {
+      // Llamada al stored procedure con JSONB
+      const productosJson = JSON.stringify(
+        items.map(i => ({ producto_id: i.producto_id, cantidad: i.cantidad }))
       );
-      if (prod.rowCount === 0)
-        throw new Error(`Producto ${item.producto_id} no existe`);
-      if (prod.rows[0].stock < item.cantidad)
-        throw new Error(`Stock insuficiente para producto ID ${item.producto_id}`);
 
-      total += parseFloat(prod.rows[0].precio_unitario) * item.cantidad;
+      const [result] = await sequelize.query(
+        `CALL sp_registrar_venta(:cliente_id, :empleado_id, :productos::jsonb, NULL)`,
+        {
+          replacements: {
+            cliente_id,
+            empleado_id,
+            productos: productosJson,
+          },
+          transaction: t,
+        }
+      );
+
+      await t.commit();
+      const ventaId = result[0]?.p_venta_id;
+      const nuevaVenta = await Venta.findByPk(ventaId, {
+        include: [
+          { model: Cliente,  as: "cliente",  attributes: ["nombre", "dpi"] },
+          { model: Empleado, as: "empleado", attributes: ["nombre", "cargo"] },
+        ],
+      });
+      res.status(201).json(nuevaVenta);
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
     }
+  }
+);
 
-    // Insertar cabecera
-    const ventaRes = await client.query(
-      `INSERT INTO venta (cliente_id, empleado_id, total) VALUES ($1,$2,$3) RETURNING *`,
-      [cliente_id, empleado_id, total.toFixed(2)]
-    );
-    const venta_id = ventaRes.rows[0].id_venta;
-
-    // Insertar detalle y descontar stock
-    for (const item of items) {
-      const prod = await client.query(
-        `SELECT precio_unitario FROM producto WHERE id_producto = $1`,
-        [item.producto_id]
+// PATCH /:id/cancelar — supervisor y admin — invoca sp_cancelar_venta
+router.patch("/:id/cancelar", authMiddleware,
+  requireRole("admin", "supervisor"),
+  async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const [result] = await sequelize.query(
+        `SELECT sp_cancelar_venta(:id) AS mensaje`,
+        { replacements: { id: req.params.id }, transaction: t }
       );
-      await client.query(
-        `INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unitario)
-         VALUES ($1,$2,$3,$4)`,
-        [venta_id, item.producto_id, item.cantidad, prod.rows[0].precio_unitario]
-      );
-      await client.query(
-        `UPDATE producto SET stock = stock - $1, updated_at = NOW() WHERE id_producto = $2`,
-        [item.cantidad, item.producto_id]
-      );
+      await t.commit();
+      res.json({ message: result[0]?.mensaje });
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
     }
-
-    await client.query("COMMIT");
-    res.status(201).json({ ...ventaRes.rows[0], total });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(400).json({ error: e.message });
-  } finally { client.release(); }
-});
+  }
+);
 
 module.exports = router;
+  

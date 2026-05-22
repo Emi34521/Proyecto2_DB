@@ -13,7 +13,7 @@
   <main class="main-content">
     <div class="page-header"><h1>Categorías</h1><p>Organización del catálogo</p></div>
     <div class="card">
-      <div class="card-header"><span></span><button class="btn btn-primary" onclick="openCreate()">+ Nueva categoría</button></div>
+      <div class="card-header"><span></span><button id="btn-nuevo" class="btn btn-primary" onclick="openCreate()">+ Nueva categoría</button></div>
       <div class="table-wrap">
         <table><thead><tr><th>ID</th><th>Nombre</th><th>Descripción</th><th>Acciones</th></tr></thead>
         <tbody id="tbody"><tr><td colspan="4" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
@@ -33,17 +33,20 @@
 </div>
 <div class="modal-overlay" id="modal-del">
   <div class="modal" style="max-width:360px;"><div class="modal-header"><h3>Eliminar categoría</h3><button class="modal-close" onclick="closeModal('modal-del')">✕</button></div>
-  <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación? Los productos asociados pueden verse afectados.</p>
+  <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación?</p>
   <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-del')">Cancelar</button><button class="btn btn-danger" onclick="confirmDel()">Eliminar</button></div></div>
 </div>
 <script src="../js/api.js"></script><script src="../js/layout.js"></script>
 <script>
 buildLayout("categorias");
-let all=[],delId=null;
+if (!guardPage("categorias","ver")) { /* redirige */ }
+const puedeEscribir=canDo("categorias","crear");
+if (!puedeEscribir) document.getElementById("btn-nuevo").style.display="none";
+let all=[], delId=null;
 async function load(){try{all=await api.get("/categorias");render(all);}catch(e){showToast(e.message,"error");}}
 function render(rows){const tbody=document.getElementById("tbody");if(!rows.length){tbody.innerHTML=`<tr><td colspan="4" class="empty-state">Sin categorías</td></tr>`;return;}
 tbody.innerHTML=rows.map(c=>`<tr><td><span class="badge badge-blue">#${c.id_categoria}</span></td><td><strong>${c.nombre}</strong></td><td>${c.descripcion||"—"}</td>
-<td><button class="btn btn-ghost btn-sm" onclick="openEdit(${c.id_categoria})">Editar</button><button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${c.id_categoria})">Eliminar</button></td></tr>`).join("");}
+<td>${puedeEscribir?`<button class="btn btn-ghost btn-sm" onclick="openEdit(${c.id_categoria})">Editar</button> <button class="btn btn-danger btn-sm" onclick="openDel(${c.id_categoria})">Eliminar</button>`:"—"}</td></tr>`).join("");}
 function clearForm(){["x-id","x-nombre","x-desc"].forEach(id=>document.getElementById(id).value="");document.getElementById("x-err").style.display="none";}
 function openCreate(){clearForm();document.getElementById("modal-title").textContent="Nueva categoría";openModal("modal-main");}
 function openEdit(id){const c=all.find(x=>x.id_categoria===id);document.getElementById("x-id").value=c.id_categoria;document.getElementById("x-nombre").value=c.nombre;document.getElementById("x-desc").value=c.descripcion||"";document.getElementById("modal-title").textContent="Editar categoría";openModal("modal-main");}

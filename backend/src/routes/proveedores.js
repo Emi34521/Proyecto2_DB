@@ -1,45 +1,46 @@
+// routes/proveedores.js
 const express  = require("express");
 const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { Proveedor } = require("../models");
+const sequelize = require("../config/database");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
 router.get("/", authMiddleware, async (req, res) => {
-  try { res.json((await pool.query(`SELECT * FROM proveedor ORDER BY nombre`)).rows); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-router.post("/", authMiddleware, async (req, res) => {
-  const { nombre, contacto, telefono, email, ubicacion } = req.body;
-  const c = await pool.connect();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `INSERT INTO proveedor(nombre,contacto,telefono,email,ubicacion) VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [nombre,contacto,telefono,email,ubicacion]
-    );
-    await c.query("COMMIT"); res.status(201).json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const rows = await Proveedor.findAll({ order: [["nombre", "ASC"]] });
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.put("/:id", authMiddleware, async (req, res) => {
-  const { nombre, contacto, telefono, email, ubicacion } = req.body;
-  const c = await pool.connect();
+
+router.post("/", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `UPDATE proveedor SET nombre=$1,contacto=$2,telefono=$3,email=$4,ubicacion=$5 WHERE id_proveedor=$6 RETURNING *`,
-      [nombre,contacto,telefono,email,ubicacion,req.params.id]
-    );
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const p = await Proveedor.create(req.body, { transaction: t });
+    await t.commit();
+    res.status(201).json(p);
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
 });
-router.delete("/:id", authMiddleware, async (req, res) => {
-  const c = await pool.connect();
+
+router.put("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(`DELETE FROM proveedor WHERE id_proveedor=$1 RETURNING id_proveedor`,[req.params.id]);
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json({message:"Eliminado"});
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const p = await Proveedor.findByPk(req.params.id, { transaction: t });
+    if (!p) { await t.rollback(); return res.status(404).json({ error: "No encontrado" }); }
+    await p.update(req.body, { transaction: t });
+    await t.commit();
+    res.json(p);
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
+});
+
+router.delete("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const p = await Proveedor.findByPk(req.params.id, { transaction: t });
+    if (!p) { await t.rollback(); return res.status(404).json({ error: "No encontrado" }); }
+    await p.destroy({ transaction: t });
+    await t.commit();
+    res.json({ message: "Eliminado" });
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

@@ -1,52 +1,114 @@
+// routes/clientes.js — CRUD con ORM; creación vía stored procedure
 const express  = require("express");
 const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { Cliente }  = require("../models");
+const sequelize    = require("../config/database");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-router.get("/", authMiddleware, async (req, res) => {
-  try { res.json((await pool.query(`SELECT * FROM cliente ORDER BY nombre`)).rows); }
-  catch (e) { res.status(500).json({ error: e.message }); }
-});
-router.get("/:id", authMiddleware, async (req, res) => {
-  try {
-    const r = await pool.query(`SELECT * FROM cliente WHERE id_cliente=$1`,[req.params.id]);
-    if(r.rowCount===0) return res.status(404).json({error:"No encontrado"});
-    res.json(r.rows[0]);
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
-router.post("/", authMiddleware, async (req, res) => {
-  const { DPI, nombre, email, telefono, direccion } = req.body;
-  const c = await pool.connect();
-  try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `INSERT INTO cliente(DPI,nombre,email,telefono,direccion) VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [DPI,nombre,email,telefono,direccion]
-    );
-    await c.query("COMMIT"); res.status(201).json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
-});
-router.put("/:id", authMiddleware, async (req, res) => {
-  const { DPI, nombre, email, telefono, direccion } = req.body;
-  const c = await pool.connect();
-  try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `UPDATE cliente SET DPI=$1,nombre=$2,email=$3,telefono=$4,direccion=$5 WHERE id_cliente=$6 RETURNING *`,
-      [DPI,nombre,email,telefono,direccion,req.params.id]
-    );
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
-});
-router.delete("/:id", authMiddleware, async (req, res) => {
-  const c = await pool.connect();
-  try {
-    await c.query("BEGIN");
-    const r = await c.query(`DELETE FROM cliente WHERE id_cliente=$1 RETURNING id_cliente`,[req.params.id]);
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json({message:"Eliminado"});
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
-});
+// GET all — vendedor, admin, supervisor, consulta
+router.get("/", authMiddleware,
+  requireRole("admin", "vendedor", "supervisor", "consulta"),
+  async (req, res) => {
+    try {
+      // ORM: findAll
+      const clientes = await Cliente.findAll({ order: [["nombre", "ASC"]] });
+      res.json(clientes);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
+
+// GET one
+router.get("/:id", authMiddleware,
+  requireRole("admin", "vendedor", "supervisor"),
+  async (req, res) => {
+    try {
+      // ORM: findByPk
+      const c = await Cliente.findByPk(req.params.id);
+      if (!c) return res.status(404).json({ error: "Cliente no encontrado" });
+      res.json(c);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
+
+// POST — vendedor y admin — usa stored procedure sp_crear_cliente
+router.post("/", authMiddleware,
+  requireRole("admin", "vendedor"),
+  async (req, res) => {
+    const { DPI, nombre, email, telefono, direccion } = req.body;
+    if (!DPI || !nombre)
+      return res.status(400).json({ error: "DPI y nombre son obligatorios" });
+
+    const t = await sequelize.transaction();
+    try {
+      // SP con parámetro OUT — invocado con SQL explícito dentro del ORM
+      const [result] = await sequelize.query(
+        `CALL sp_crear_cliente(:dpi, :nombre, :email, :tel, :dir, NULL)`,
+        {
+          replacements: {
+            dpi:    DPI,
+            nombre,
+            email:  email    || null,
+            tel:    telefono || null,
+            dir:    direccion || null,
+          },
+          transaction: t,
+        }
+      );
+      await t.commit();
+
+      const clienteId = result[0]?.p_cliente_id;
+      // ORM: buscar el registro recién creado
+      const nuevo = await Cliente.findByPk(clienteId);
+      res.status(201).json(nuevo);
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+// PUT — vendedor y admin — ORM
+router.put("/:id", authMiddleware,
+  requireRole("admin", "vendedor"),
+  async (req, res) => {
+    const { DPI, nombre, email, telefono, direccion } = req.body;
+    const t = await sequelize.transaction();
+    try {
+      // ORM: findByPk + update
+      const c = await Cliente.findByPk(req.params.id, { transaction: t });
+      if (!c) {
+        await t.rollback();
+        return res.status(404).json({ error: "Cliente no encontrado" });
+      }
+      await c.update({ dpi: DPI, nombre, email, telefono, direccion }, { transaction: t });
+      await t.commit();
+      res.json(c);
+    } catch (e) {
+      await t.rollback();
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
+
+// DELETE — solo admin — ORM
+router.delete("/:id", authMiddleware,
+  requireRole("admin"),
+  async (req, res) => {
+    const t = await sequelize.transaction();
+    try {
+      const c = await Cliente.findByPk(req.params.id, { transaction: t });
+      if (!c) {
+        await t.rollback();
+        return res.status(404).json({ error: "Cliente no encontrado" });
+      }
+      await c.destroy({ transaction: t });
+      await t.commit();
+      res.json({ message: "Cliente eliminado" });
+    } catch (e) {
+      await t.rollback();
+      res.status(500).json({ error: e.message });
+    }
+  }
+);
 
 module.exports = router;

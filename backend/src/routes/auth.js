@@ -1,47 +1,43 @@
+// routes/auth.js
 const express  = require("express");
 const router   = express.Router();
 const bcrypt   = require("bcryptjs");
 const jwt      = require("jsonwebtoken");
-const { pool } = require("../db");
+const { Usuario } = require("../models");
+const { getPermisos } = require("../middleware/auth");
 
 const SECRET = process.env.JWT_SECRET || "jwt_secret_dev";
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
   const { correo, contrasena } = req.body;
-  console.log("LOGIN ATTEMPT:", { correo, contrasena });
   if (!correo || !contrasena)
     return res.status(400).json({ error: "Correo y contraseña requeridos" });
 
   try {
-    const result = await pool.query(
-      `SELECT id_usuario, nombre, correo, contrasena_hash, tipo_usuario
-       FROM usuario WHERE correo = $1`,
-      [correo]
-    );
+    // ORM: buscar usuario por correo
+    const user = await Usuario.findOne({ where: { correo } });
+    if (!user) return res.status(401).json({ error: "Credenciales incorrectas" });
 
-    if (result.rowCount === 0)
-      return res.status(401).json({ error: "Credenciales incorrectas" });
-
-    const user = result.rows[0];
     const valid = await bcrypt.compare(contrasena, user.contrasena_hash);
+    if (!valid) return res.status(401).json({ error: "Credenciales incorrectas" });
 
-    if (!valid)
-      return res.status(401).json({ error: "Credenciales incorrectas" });
+    const payload = {
+      id:     user.id_usuario,
+      nombre: user.nombre,
+      tipo:   user.tipo_usuario,
+    };
 
-    const token = jwt.sign(
-      { id: user.id_usuario, nombre: user.nombre, tipo: user.tipo_usuario },
-      SECRET,
-      { expiresIn: "8h" }
-    );
+    const token = jwt.sign(payload, SECRET, { expiresIn: "8h" });
 
     res.json({
       token,
       usuario: {
-        id:     user.id_usuario,
-        nombre: user.nombre,
-        correo: user.correo,
-        tipo:   user.tipo_usuario,
+        id:       user.id_usuario,
+        nombre:   user.nombre,
+        correo:   user.correo,
+        tipo:     user.tipo_usuario,
+        permisos: getPermisos(user.tipo_usuario),
       },
     });
   } catch (e) {

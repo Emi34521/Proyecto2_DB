@@ -13,7 +13,7 @@
   <main class="main-content">
     <div class="page-header"><h1>Proveedores</h1><p>Gestión de proveedores</p></div>
     <div class="card">
-      <div class="card-header"><span></span><button class="btn btn-primary" onclick="openCreate()">+ Nuevo proveedor</button></div>
+      <div class="card-header"><span></span><button id="btn-nuevo" class="btn btn-primary" onclick="openCreate()">+ Nuevo proveedor</button></div>
       <div class="table-wrap">
         <table><thead><tr><th>ID</th><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th>Email</th><th>Ubicación</th><th>Acciones</th></tr></thead>
         <tbody id="tbody"><tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
@@ -46,11 +46,14 @@
 <script src="../js/api.js"></script><script src="../js/layout.js"></script>
 <script>
 buildLayout("proveedores");
-let all=[],delId=null;
+if (!guardPage("proveedores","ver")) { /* redirige */ }
+const puedeEscribir=canDo("proveedores","crear");
+if (!puedeEscribir) document.getElementById("btn-nuevo").style.display="none";
+let all=[], delId=null;
 async function load(){try{all=await api.get("/proveedores");render(all);}catch(e){showToast(e.message,"error");}}
 function render(rows){const tbody=document.getElementById("tbody");if(!rows.length){tbody.innerHTML=`<tr><td colspan="7" class="empty-state">Sin proveedores</td></tr>`;return;}
 tbody.innerHTML=rows.map(p=>`<tr><td><span class="badge badge-blue">#${p.id_proveedor}</span></td><td><strong>${p.nombre}</strong></td><td>${p.contacto||"—"}</td><td>${p.telefono||"—"}</td><td>${p.email||"—"}</td><td>${p.ubicacion||"—"}</td>
-<td><button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id_proveedor})">Editar</button><button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${p.id_proveedor})">Eliminar</button></td></tr>`).join("");}
+<td>${puedeEscribir?`<button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id_proveedor})">Editar</button> <button class="btn btn-danger btn-sm" onclick="openDel(${p.id_proveedor})">Eliminar</button>`:"—"}</td></tr>`).join("");}
 function clearForm(){["x-id","x-nombre","x-contacto","x-tel","x-email","x-ubic"].forEach(id=>document.getElementById(id).value="");document.getElementById("x-err").style.display="none";}
 function openCreate(){clearForm();document.getElementById("modal-title").textContent="Nuevo proveedor";openModal("modal-main");}
 function openEdit(id){const p=all.find(x=>x.id_proveedor===id);document.getElementById("x-id").value=p.id_proveedor;document.getElementById("x-nombre").value=p.nombre;document.getElementById("x-contacto").value=p.contacto||"";document.getElementById("x-tel").value=p.telefono||"";document.getElementById("x-email").value=p.email||"";document.getElementById("x-ubic").value=p.ubicacion||"";document.getElementById("modal-title").textContent="Editar proveedor";openModal("modal-main");}

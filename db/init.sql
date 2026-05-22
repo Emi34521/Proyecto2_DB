@@ -215,20 +215,16 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO rol_admin;
 GRANT SELECT ON producto, categoria, proveedor, empleado TO rol_vendedor;
 GRANT SELECT, INSERT, UPDATE ON cliente TO rol_vendedor;
 GRANT SELECT, INSERT ON venta, detalle_ventas TO rol_vendedor;
-GRANT USAGE, SELECT ON
-  SEQUENCE venta_id_venta_seq,
-  SEQUENCE detalle_ventas_id_detalle_seq,
-  SEQUENCE cliente_id_cliente_seq
-TO rol_vendedor;
+GRANT USAGE, SELECT ON SEQUENCE venta_id_venta_seq TO rol_vendedor;
+GRANT USAGE, SELECT ON SEQUENCE detalle_ventas_id_detalle_seq TO rol_vendedor;
+GRANT USAGE, SELECT ON SEQUENCE cliente_id_cliente_seq TO rol_vendedor;
 
 -- ── rol_bodeguero: inventario y compras ───────────────────────
 GRANT SELECT ON categoria, proveedor, venta TO rol_bodeguero;
 GRANT SELECT, INSERT, UPDATE ON producto TO rol_bodeguero;
 GRANT SELECT, INSERT ON compra TO rol_bodeguero;
-GRANT USAGE, SELECT ON
-  SEQUENCE producto_id_producto_seq,
-  SEQUENCE compra_id_compra_seq
-TO rol_bodeguero;
+GRANT USAGE, SELECT ON SEQUENCE producto_id_producto_seq TO rol_bodeguero;
+GRANT USAGE, SELECT ON SEQUENCE compra_id_compra_seq TO rol_bodeguero;
 
 -- ── rol_supervisor: lectura total + cancelar ventas ───────────
 GRANT SELECT ON

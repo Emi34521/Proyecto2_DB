@@ -1,43 +1,84 @@
-const express  = require("express");
-const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+// routes/compras.js — usa stored procedures
+const express   = require("express");
+const router    = express.Router();
+const sequelize = require("../config/database");
+const { Compra, Producto, Proveedor } = require("../models");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-router.get("/", authMiddleware, async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT c.id_compra, c.fecha, c.cantidad_compra, c.precio_mayor_unidad,
-             p.nombre AS producto, pr.nombre AS proveedor
-      FROM   compra    c
-      JOIN   producto  p  ON c.id_producto  = p.id_producto
-      JOIN   proveedor pr ON c.id_proveedor = pr.id_proveedor
-      ORDER  BY c.fecha DESC
-    `);
-    res.json(r.rows);
-  } catch(e){ res.status(500).json({error:e.message}); }
-});
+// GET all
+router.get("/", authMiddleware,
+  requireRole("admin", "bodeguero", "supervisor"),
+  async (req, res) => {
+    try {
+      const compras = await Compra.findAll({
+        include: [
+          { model: Producto,  as: "producto",  attributes: ["nombre"] },
+          { model: Proveedor, as: "proveedor", attributes: ["nombre"] },
+        ],
+        order: [["fecha", "DESC"]],
+      });
+      res.json(compras);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
 
-router.post("/", authMiddleware, async (req, res) => {
-  const { id_proveedor, id_producto, cantidad_compra, precio_mayor_unidad } = req.body;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const r = await client.query(
-      `INSERT INTO compra(id_proveedor,id_producto,cantidad_compra,precio_mayor_unidad)
-       VALUES($1,$2,$3,$4) RETURNING *`,
-      [id_proveedor,id_producto,cantidad_compra,precio_mayor_unidad]
-    );
-    // Sumar stock al producto
-    await client.query(
-      `UPDATE producto SET stock = stock + $1, updated_at = NOW() WHERE id_producto = $2`,
-      [cantidad_compra, id_producto]
-    );
-    await client.query("COMMIT");
-    res.status(201).json(r.rows[0]);
-  } catch(e){
-    await client.query("ROLLBACK");
-    res.status(500).json({error:e.message});
-  } finally { client.release(); }
-});
+// POST — bodeguero y admin — SP sp_registrar_compra
+router.post("/", authMiddleware,
+  requireRole("admin", "bodeguero"),
+  async (req, res) => {
+    const { id_proveedor, id_producto, cantidad_compra, precio_mayor_unidad } = req.body;
+    const t = await sequelize.transaction();
+    try {
+      const [result] = await sequelize.query(
+        `CALL sp_registrar_compra(:prov_id, :prod_id, :cantidad, :precio, NULL)`,
+        {
+          replacements: {
+            prov_id:  id_proveedor,
+            prod_id:  id_producto,
+            cantidad: cantidad_compra,
+            precio:   precio_mayor_unidad,
+          },
+          transaction: t,
+        }
+      );
+      await t.commit();
+
+      const compraId = result[0]?.p_compra_id;
+      const nueva = await Compra.findByPk(compraId, {
+        include: [
+          { model: Producto,  as: "producto",  attributes: ["nombre"] },
+          { model: Proveedor, as: "proveedor", attributes: ["nombre"] },
+        ],
+      });
+      res.status(201).json(nueva);
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+// PATCH /ajuste-stock — bodeguero y admin — SP sp_actualizar_stock
+router.patch("/ajuste-stock", authMiddleware,
+  requireRole("admin", "bodeguero"),
+  async (req, res) => {
+    const { producto_id, ajuste } = req.body;
+    const t = await sequelize.transaction();
+    try {
+      const [result] = await sequelize.query(
+        `CALL sp_actualizar_stock(:prod_id, :ajuste, NULL)`,
+        {
+          replacements: { prod_id: producto_id, ajuste },
+          transaction: t,
+        }
+      );
+      await t.commit();
+      res.json({ stock_nuevo: result[0]?.p_stock_nuevo, message: "Stock ajustado correctamente" });
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
 
 module.exports = router;

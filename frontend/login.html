@@ -7,6 +7,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    .roles-hint { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .roles-hint p { font-size: 11px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .05em; }
+    .role-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 8px; border-radius: 6px; cursor: pointer;
+      transition: background .12s; margin-bottom: 3px;
+    }
+    .role-row:hover { background: var(--surface2); }
+    .role-row span  { font-size: 12px; color: var(--muted); }
+    .role-row span.correo { font-family: var(--font); color: var(--text); font-size: 11px; }
+  </style>
 </head>
 <body>
 <div class="login-page">
@@ -18,7 +30,7 @@
     <div class="login-error" id="login-error"></div>
     <div class="form-group">
       <label>Correo electrónico</label>
-      <input id="correo" type="email" class="form-control" placeholder="admin@tienda.com" autocomplete="username"/>
+      <input id="correo" type="email" class="form-control" placeholder="usuario@tienda.com" autocomplete="username"/>
     </div>
     <div class="form-group">
       <label>Contraseña</label>
@@ -27,15 +39,44 @@
     <button class="btn btn-primary" style="width:100%;margin-top:8px;justify-content:center;" id="btn-login">
       Iniciar sesión
     </button>
-    <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
-      admin@tienda.com / Admin1234
-    </p>
+
+    <!-- Usuarios de prueba por rol -->
+    <div class="roles-hint">
+      <p>Usuarios de prueba (clic para autocompletar)</p>
+      <div class="role-row" onclick="fill('admin@tienda.com')">
+        <span><span class="badge badge-blue">admin</span></span>
+        <span class="correo">admin@tienda.com</span>
+      </div>
+      <div class="role-row" onclick="fill('vendedor@tienda.com')">
+        <span><span class="badge badge-green">vendedor</span></span>
+        <span class="correo">vendedor@tienda.com</span>
+      </div>
+      <div class="role-row" onclick="fill('bodega@tienda.com')">
+        <span><span class="badge badge-orange">bodeguero</span></span>
+        <span class="correo">bodega@tienda.com</span>
+      </div>
+      <div class="role-row" onclick="fill('supervisor@tienda.com')">
+        <span><span class="badge badge-purple">supervisor</span></span>
+        <span class="correo">supervisor@tienda.com</span>
+      </div>
+      <div class="role-row" onclick="fill('consulta@tienda.com')">
+        <span><span class="badge badge-red">consulta</span></span>
+        <span class="correo">consulta@tienda.com</span>
+      </div>
+      <p style="text-align:center;margin-top:8px;">Contraseña: <span style="font-family:var(--font);color:var(--text)">Admin1234</span></p>
+    </div>
   </div>
 </div>
+
 <script src="js/api.js"></script>
 <script>
-  // Si ya tiene sesión, redirigir al dashboard
   if (getToken()) window.location.href = "/index.html";
+
+  function fill(correo) {
+    document.getElementById("correo").value     = correo;
+    document.getElementById("contrasena").value = "Admin1234";
+    document.getElementById("correo").focus();
+  }
 
   async function doLogin() {
     const correo     = document.getElementById("correo").value.trim();
@@ -46,8 +87,7 @@
     errDiv.style.display = "none";
     if (!correo || !contrasena) {
       errDiv.textContent = "Por favor ingresa correo y contraseña.";
-      errDiv.style.display = "block";
-      return;
+      errDiv.style.display = "block"; return;
     }
 
     btn.disabled = true;

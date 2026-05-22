@@ -13,10 +13,7 @@
   <main class="main-content">
     <div class="page-header"><h1>Empleados</h1><p>Gestión del personal</p></div>
     <div class="card">
-      <div class="card-header">
-        <span></span>
-        <button class="btn btn-primary" onclick="openCreate()">+ Nuevo empleado</button>
-      </div>
+      <div class="card-header"><span></span><button id="btn-nuevo" class="btn btn-primary" onclick="openCreate()">+ Nuevo empleado</button></div>
       <div class="table-wrap">
         <table><thead><tr><th>ID</th><th>Nombre</th><th>Cargo</th><th>Email</th><th>Teléfono</th><th>Acciones</th></tr></thead>
         <tbody id="tbody"><tr><td colspan="6" class="empty-state"><span class="spinner"></span></td></tr></tbody></table>
@@ -24,7 +21,6 @@
     </div>
   </main>
 </div>
-
 <div class="modal-overlay" id="modal-main">
   <div class="modal">
     <div class="modal-header"><h3 id="modal-title">Nuevo empleado</h3><button class="modal-close" onclick="closeModal('modal-main')">✕</button></div>
@@ -49,14 +45,15 @@
   <p style="color:var(--muted);font-size:13px;">¿Confirmas la eliminación?</p>
   <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-del')">Cancelar</button><button class="btn btn-danger" onclick="confirmDel()">Eliminar</button></div></div>
 </div>
-
 <script src="../js/api.js"></script><script src="../js/layout.js"></script>
 <script>
 buildLayout("empleados");
+if (!guardPage("empleados","ver")) { /* redirige */ }
+const puedeCrear=canDo("empleados","crear");
+const puedeElim =canDo("empleados","eliminar");
+if (!puedeCrear) document.getElementById("btn-nuevo").style.display="none";
 let all=[], delId=null;
-async function load() {
-  try { all=await api.get("/empleados"); render(all); } catch(e){ showToast(e.message,"error"); }
-}
+async function load() { try { all=await api.get("/empleados"); render(all); } catch(e){ showToast(e.message,"error"); } }
 function render(rows){
   const tbody=document.getElementById("tbody");
   if(!rows.length){tbody.innerHTML=`<tr><td colspan="6" class="empty-state">Sin empleados</td></tr>`;return;}
@@ -65,8 +62,11 @@ function render(rows){
     <td><strong>${e.nombre}</strong></td>
     <td><span class="badge badge-purple">${e.cargo||"—"}</span></td>
     <td>${e.email||"—"}</td><td>${e.telefono||"—"}</td>
-    <td><button class="btn btn-ghost btn-sm" onclick="openEdit(${e.id_empleado})">Editar</button>
-    <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${e.id_empleado})">Eliminar</button></td></tr>`).join("");
+    <td>
+      ${puedeCrear?`<button class="btn btn-ghost btn-sm" onclick="openEdit(${e.id_empleado})">Editar</button>`:""}
+      ${puedeElim ?`<button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openDel(${e.id_empleado})">Eliminar</button>`:""}
+      ${!puedeCrear&&!puedeElim?"—":""}
+    </td></tr>`).join("");
 }
 function clearForm(){["e-id","e-nombre","e-cargo","e-email","e-tel"].forEach(id=>document.getElementById(id).value="");document.getElementById("e-error").style.display="none";}
 function openCreate(){clearForm();document.getElementById("modal-title").textContent="Nuevo empleado";openModal("modal-main");}

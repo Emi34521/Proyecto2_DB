@@ -1,40 +1,56 @@
-// ── categorias.js ────────────────────────────────────────────
+// routes/categorias.js  — CRUD completo con ORM (Sequelize)
 const express  = require("express");
 const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { Categoria } = require("../models");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
+// GET — cualquier rol autenticado puede ver
 router.get("/", authMiddleware, async (req, res) => {
-  try { res.json((await pool.query(`SELECT * FROM categoria ORDER BY nombre`)).rows); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    // ORM: findAll
+    const categorias = await Categoria.findAll({ order: [["nombre", "ASC"]] });
+    res.json(categorias);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post("/", authMiddleware, async (req, res) => {
+
+// POST — solo admin
+router.post("/", authMiddleware, requireRole("admin"), async (req, res) => {
   const { nombre, descripcion } = req.body;
-  const c = await pool.connect();
+  if (!nombre) return res.status(400).json({ error: "Nombre obligatorio" });
   try {
-    await c.query("BEGIN");
-    const r = await c.query(`INSERT INTO categoria(nombre,descripcion) VALUES($1,$2) RETURNING *`,[nombre,descripcion]);
-    await c.query("COMMIT"); res.status(201).json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    // ORM: create
+    const nueva = await Categoria.create({ nombre, descripcion });
+    res.status(201).json(nueva);
+  } catch (e) {
+    if (e.name === "SequelizeUniqueConstraintError")
+      return res.status(400).json({ error: "Ya existe una categoría con ese nombre" });
+    res.status(500).json({ error: e.message });
+  }
 });
-router.put("/:id", authMiddleware, async (req, res) => {
+
+// PUT — solo admin
+router.put("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   const { nombre, descripcion } = req.body;
-  const c = await pool.connect();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(`UPDATE categoria SET nombre=$1,descripcion=$2 WHERE id_categoria=$3 RETURNING *`,[nombre,descripcion,req.params.id]);
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    // ORM: findByPk + save
+    const cat = await Categoria.findByPk(req.params.id);
+    if (!cat) return res.status(404).json({ error: "Categoría no encontrada" });
+    cat.nombre      = nombre      ?? cat.nombre;
+    cat.descripcion = descripcion ?? cat.descripcion;
+    await cat.save();
+    res.json(cat);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.delete("/:id", authMiddleware, async (req, res) => {
-  const c = await pool.connect();
+
+// DELETE — solo admin
+router.delete("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
   try {
-    await c.query("BEGIN");
-    const r = await c.query(`DELETE FROM categoria WHERE id_categoria=$1 RETURNING id_categoria`,[req.params.id]);
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json({message:"Eliminado"});
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    // ORM: destroy
+    const cat = await Categoria.findByPk(req.params.id);
+    if (!cat) return res.status(404).json({ error: "Categoría no encontrada" });
+    await cat.destroy();
+    res.json({ message: "Categoría eliminada" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

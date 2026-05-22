@@ -1,45 +1,49 @@
+// routes/empleados.js
 const express  = require("express");
 const router   = express.Router();
-const { pool } = require("../db");
-const { authMiddleware } = require("../middleware/auth");
+const { Empleado } = require("../models");
+const sequelize    = require("../config/database");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-router.get("/", authMiddleware, async (req, res) => {
-  try { res.json((await pool.query(`SELECT * FROM empleado ORDER BY nombre`)).rows); }
-  catch(e){ res.status(500).json({error:e.message}); }
-});
-router.post("/", authMiddleware, async (req, res) => {
-  const { nombre, cargo, email, telefono } = req.body;
-  const c = await pool.connect();
+router.get("/", authMiddleware,
+  requireRole("admin", "vendedor", "supervisor"),
+  async (req, res) => {
+    try {
+      const rows = await Empleado.findAll({ order: [["nombre", "ASC"]] });
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
+
+router.post("/", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `INSERT INTO empleado(nombre,cargo,email,telefono) VALUES($1,$2,$3,$4) RETURNING *`,
-      [nombre,cargo,email,telefono]
-    );
-    await c.query("COMMIT"); res.status(201).json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const e = await Empleado.create(req.body, { transaction: t });
+    await t.commit();
+    res.status(201).json(e);
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
 });
-router.put("/:id", authMiddleware, async (req, res) => {
-  const { nombre, cargo, email, telefono } = req.body;
-  const c = await pool.connect();
+
+router.put("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(
-      `UPDATE empleado SET nombre=$1,cargo=$2,email=$3,telefono=$4 WHERE id_empleado=$5 RETURNING *`,
-      [nombre,cargo,email,telefono,req.params.id]
-    );
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json(r.rows[0]);
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const emp = await Empleado.findByPk(req.params.id, { transaction: t });
+    if (!emp) { await t.rollback(); return res.status(404).json({ error: "No encontrado" }); }
+    await emp.update(req.body, { transaction: t });
+    await t.commit();
+    res.json(emp);
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
 });
-router.delete("/:id", authMiddleware, async (req, res) => {
-  const c = await pool.connect();
+
+router.delete("/:id", authMiddleware, requireRole("admin"), async (req, res) => {
+  const t = await sequelize.transaction();
   try {
-    await c.query("BEGIN");
-    const r = await c.query(`DELETE FROM empleado WHERE id_empleado=$1 RETURNING id_empleado`,[req.params.id]);
-    if(r.rowCount===0){await c.query("ROLLBACK");return res.status(404).json({error:"No encontrado"});}
-    await c.query("COMMIT"); res.json({message:"Eliminado"});
-  } catch(e){ await c.query("ROLLBACK"); res.status(500).json({error:e.message}); } finally{c.release();}
+    const emp = await Empleado.findByPk(req.params.id, { transaction: t });
+    if (!emp) { await t.rollback(); return res.status(404).json({ error: "No encontrado" }); }
+    await emp.destroy({ transaction: t });
+    await t.commit();
+    res.json({ message: "Eliminado" });
+  } catch (e) { await t.rollback(); res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

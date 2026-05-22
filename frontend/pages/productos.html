@@ -15,25 +15,20 @@
       <h1>Productos</h1>
       <p>Gestión del catálogo e inventario</p>
     </div>
-
     <div class="card">
       <div class="card-header">
         <div class="search-bar">
           <input id="search" type="text" class="form-control" placeholder="Buscar producto..." style="width:260px" oninput="filterTable()"/>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" onclick="downloadCSV('/reportes/exportar-productos-csv','productos.csv')">⬇ Exportar CSV</button>
-          <button class="btn btn-primary" onclick="openCreate()">+ Nuevo producto</button>
+          <button id="btn-csv"   class="btn btn-ghost btn-sm"  onclick="downloadCSV('/reportes/exportar-productos-csv','productos.csv')">⬇ Exportar CSV</button>
+          <button id="btn-nuevo" class="btn btn-primary"       onclick="openCreate()">+ Nuevo producto</button>
         </div>
       </div>
       <div class="table-wrap">
-        <table id="tbl-productos">
-          <thead>
-            <tr><th>ID</th><th>Nombre</th><th>Categoría</th><th>Proveedor</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr>
-          </thead>
-          <tbody id="tbody-productos">
-            <tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr>
-          </tbody>
+        <table>
+          <thead><tr><th>ID</th><th>Nombre</th><th>Categoría</th><th>Proveedor</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead>
+          <tbody id="tbody-productos"><tr><td colspan="7" class="empty-state"><span class="spinner"></span></td></tr></tbody>
         </table>
       </div>
     </div>
@@ -49,33 +44,15 @@
     </div>
     <input type="hidden" id="p-id"/>
     <div class="form-row">
-      <div class="form-group">
-        <label>Nombre *</label>
-        <input id="p-nombre" class="form-control" placeholder="Nombre del producto"/>
-      </div>
-      <div class="form-group">
-        <label>Precio unitario (Q) *</label>
-        <input id="p-precio" type="number" step="0.01" class="form-control" placeholder="0.00"/>
-      </div>
+      <div class="form-group"><label>Nombre *</label><input id="p-nombre" class="form-control"/></div>
+      <div class="form-group"><label>Precio (Q) *</label><input id="p-precio" type="number" step="0.01" class="form-control"/></div>
     </div>
-    <div class="form-group">
-      <label>Descripción</label>
-      <input id="p-desc" class="form-control" placeholder="Descripción breve"/>
-    </div>
+    <div class="form-group"><label>Descripción</label><input id="p-desc" class="form-control"/></div>
     <div class="form-row">
-      <div class="form-group">
-        <label>Stock *</label>
-        <input id="p-stock" type="number" class="form-control" placeholder="0"/>
-      </div>
-      <div class="form-group">
-        <label>Categoría *</label>
-        <select id="p-categoria" class="form-control"><option value="">Seleccionar...</option></select>
-      </div>
+      <div class="form-group"><label>Stock *</label><input id="p-stock" type="number" class="form-control"/></div>
+      <div class="form-group"><label>Categoría *</label><select id="p-categoria" class="form-control"><option value="">Seleccionar...</option></select></div>
     </div>
-    <div class="form-group">
-      <label>Proveedor *</label>
-      <select id="p-proveedor" class="form-control"><option value="">Seleccionar...</option></select>
-    </div>
+    <div class="form-group"><label>Proveedor *</label><select id="p-proveedor" class="form-control"><option value="">Seleccionar...</option></select></div>
     <div id="modal-error" style="color:var(--danger);font-size:12px;margin-top:4px;display:none;"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-producto')">Cancelar</button>
@@ -84,11 +61,26 @@
   </div>
 </div>
 
-<!-- Modal Confirmar Eliminar -->
+<!-- Modal solo stock (bodeguero) -->
+<div class="modal-overlay" id="modal-stock">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header"><h3>Ajustar stock</h3><button class="modal-close" onclick="closeModal('modal-stock')">✕</button></div>
+    <input type="hidden" id="s-id"/>
+    <p id="s-nombre" style="color:var(--muted);font-size:13px;margin-bottom:12px;"></p>
+    <div class="form-group"><label>Ajuste (positivo o negativo)</label><input id="s-ajuste" type="number" class="form-control" placeholder="Ej: -5 o +20"/></div>
+    <div id="s-err" style="color:var(--danger);font-size:12px;display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-stock')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveStock()">Ajustar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Eliminar -->
 <div class="modal-overlay" id="modal-delete">
   <div class="modal" style="max-width:380px;">
     <div class="modal-header"><h3>Confirmar eliminación</h3><button class="modal-close" onclick="closeModal('modal-delete')">✕</button></div>
-    <p style="color:var(--muted);font-size:13px;">¿Estás seguro de que deseas eliminar este producto? Esta acción no se puede deshacer.</p>
+    <p style="color:var(--muted);font-size:13px;">¿Estás seguro de que deseas eliminar este producto?</p>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-delete')">Cancelar</button>
       <button class="btn btn-danger" onclick="confirmDelete()">Eliminar</button>
@@ -100,9 +92,17 @@
 <script src="../js/layout.js"></script>
 <script>
 buildLayout("productos");
+if (!guardPage("productos","ver")) { /* redirige */ }
 
-let allProductos = [];
-let deleteId = null;
+const puedeCrear   = canDo("productos","crear");
+const puedeEditar  = canDo("productos","editar");
+const puedeEliminar= canDo("productos","eliminar");
+const esBodeguero  = getUsuario()?.tipo === "bodeguero";
+
+if (!puedeCrear)  document.getElementById("btn-nuevo").style.display = "none";
+if (!canDo("reportes","ver")) document.getElementById("btn-csv").style.display = "none";
+
+let allProductos = [], deleteId = null;
 
 async function loadProductos() {
   try {
@@ -113,32 +113,33 @@ async function loadProductos() {
 
 function renderProductos(rows) {
   const tbody = document.getElementById("tbody-productos");
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Sin productos</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = rows.map(p => `
-    <tr>
+  if (!rows.length) { tbody.innerHTML=`<tr><td colspan="7" class="empty-state">Sin productos</td></tr>`; return; }
+  tbody.innerHTML = rows.map(p => {
+    const cat  = p.categoria?.nombre || p.categoria || "—";
+    const prov = p.proveedor?.nombre || p.proveedor || "—";
+    let acciones = "";
+    if (puedeEditar && !esBodeguero) acciones += `<button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id_producto})">Editar</button>`;
+    if (esBodeguero && puedeEditar)  acciones += `<button class="btn btn-ghost btn-sm" onclick="openStock(${p.id_producto},'${p.nombre}',${p.stock})">Ajustar stock</button>`;
+    if (puedeEliminar) acciones += `<button class="btn btn-danger btn-sm" onclick="openDelete(${p.id_producto})" style="margin-left:4px">Eliminar</button>`;
+    if (!acciones) acciones = "—";
+    return `<tr>
       <td><span class="badge badge-blue">#${p.id_producto}</span></td>
       <td><strong>${p.nombre}</strong><br/><small style="color:var(--muted)">${p.descripcion||""}</small></td>
-      <td><span class="badge badge-purple">${p.categoria}</span></td>
-      <td>${p.proveedor}</td>
+      <td><span class="badge badge-purple">${cat}</span></td>
+      <td>${prov}</td>
       <td style="font-family:var(--font)">${fmtMoney(p.precio_unitario)}</td>
       <td><span class="badge ${p.stock<=5?'badge-red':p.stock<=20?'badge-orange':'badge-green'}">${p.stock}</span></td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="openEdit(${p.id_producto})">Editar</button>
-        <button class="btn btn-danger btn-sm" onclick="openDelete(${p.id_producto})" style="margin-left:4px">Eliminar</button>
-      </td>
-    </tr>
-  `).join("");
+      <td>${acciones}</td>
+    </tr>`;
+  }).join("");
 }
 
 function filterTable() {
   const q = document.getElementById("search").value.toLowerCase();
   renderProductos(allProductos.filter(p =>
     p.nombre.toLowerCase().includes(q) ||
-    p.categoria.toLowerCase().includes(q) ||
-    p.proveedor.toLowerCase().includes(q)
+    (p.categoria?.nombre||"").toLowerCase().includes(q) ||
+    (p.proveedor?.nombre||"").toLowerCase().includes(q)
   ));
 }
 
@@ -171,25 +172,41 @@ async function openEdit(id) {
     document.getElementById("p-precio").value    = p.precio_unitario;
     document.getElementById("p-desc").value      = p.descripcion || "";
     document.getElementById("p-stock").value     = p.stock;
-    document.getElementById("p-categoria").value = p.id_categoria;
-    document.getElementById("p-proveedor").value = p.id_proveedor;
+    document.getElementById("p-categoria").value = p.categoria?.id_categoria || p.categoria_id;
+    document.getElementById("p-proveedor").value = p.proveedor?.id_proveedor || p.proveedor_id;
     document.getElementById("modal-title").textContent = "Editar producto";
     openModal("modal-producto");
   } catch(e) { showToast("Error: "+e.message,"error"); }
 }
 
-function openDelete(id) {
-  deleteId = id;
-  openModal("modal-delete");
+function openStock(id, nombre, stock) {
+  document.getElementById("s-id").value = id;
+  document.getElementById("s-nombre").textContent = `${nombre} — Stock actual: ${stock}`;
+  document.getElementById("s-ajuste").value = "";
+  document.getElementById("s-err").style.display = "none";
+  openModal("modal-stock");
 }
 
+async function saveStock() {
+  const errDiv = document.getElementById("s-err");
+  const id     = parseInt(document.getElementById("s-id").value);
+  const ajuste = parseInt(document.getElementById("s-ajuste").value);
+  if (isNaN(ajuste)) { errDiv.textContent="Ingresa un número válido."; errDiv.style.display="block"; return; }
+  try {
+    const r = await api.patch("/compras/ajuste-stock", { producto_id: id, ajuste });
+    showToast(`Stock actualizado: ${r.stock_nuevo} unidades`, "success");
+    closeModal("modal-stock");
+    loadProductos();
+  } catch(e) { errDiv.textContent=e.message; errDiv.style.display="block"; }
+}
+
+function openDelete(id) { deleteId=id; openModal("modal-delete"); }
+
 async function confirmDelete() {
-  if (!deleteId) return;
   try {
     await api.delete(`/productos/${deleteId}`);
     showToast("Producto eliminado","success");
-    closeModal("modal-delete");
-    loadProductos();
+    closeModal("modal-delete"); loadProductos();
   } catch(e) { showToast("Error: "+e.message,"error"); }
 }
 
@@ -197,33 +214,26 @@ async function saveProducto() {
   const errDiv = document.getElementById("modal-error");
   const id     = document.getElementById("p-id").value;
   const body   = {
-    nombre:         document.getElementById("p-nombre").value.trim(),
-    descripcion:    document.getElementById("p-desc").value.trim(),
-    precio_unitario:parseFloat(document.getElementById("p-precio").value),
-    stock:          parseInt(document.getElementById("p-stock").value),
-    categoria_id:   parseInt(document.getElementById("p-categoria").value),
-    proveedor_id:   parseInt(document.getElementById("p-proveedor").value),
+    nombre:          document.getElementById("p-nombre").value.trim(),
+    descripcion:     document.getElementById("p-desc").value.trim(),
+    precio_unitario: parseFloat(document.getElementById("p-precio").value),
+    stock:           parseInt(document.getElementById("p-stock").value),
+    categoria_id:    parseInt(document.getElementById("p-categoria").value),
+    proveedor_id:    parseInt(document.getElementById("p-proveedor").value),
   };
-
   if (!body.nombre || isNaN(body.precio_unitario) || isNaN(body.stock) || !body.categoria_id || !body.proveedor_id) {
-    errDiv.textContent = "Por favor completa todos los campos obligatorios.";
-    errDiv.style.display = "block";
-    return;
+    errDiv.textContent = "Completa todos los campos obligatorios.";
+    errDiv.style.display = "block"; return;
   }
-
   try {
     if (id) await api.put(`/productos/${id}`, body);
     else    await api.post("/productos", body);
-    showToast(id ? "Producto actualizado" : "Producto creado","success");
-    closeModal("modal-producto");
-    loadProductos();
-  } catch(e) {
-    errDiv.textContent = e.message;
-    errDiv.style.display = "block";
-  }
+    showToast(id?"Producto actualizado":"Producto creado","success");
+    closeModal("modal-producto"); loadProductos();
+  } catch(e) { errDiv.textContent=e.message; errDiv.style.display="block"; }
 }
 
-loadSelects();
+if (!esBodeguero) loadSelects();
 loadProductos();
 </script>
 </body>
