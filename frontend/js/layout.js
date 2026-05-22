@@ -44,7 +44,7 @@ function buildLayout(activePage) {
     <div class="sidebar-logo">▣ TIENDA<span>Sistema de ventas</span></div>
     <nav class="sidebar-nav">
       ${navVisible.map(item => `
-        <a href="${item.href}" class="nav-item ${activePage === item.id ? "active" : ""}">
+        <a href="${item.href}" class="nav-item ${activePage && activePage === item.id ? "active" : ""}">
           <span class="icon">${item.icon}</span>
           <span>${item.label}</span>
         </a>`).join("")}
@@ -69,12 +69,11 @@ function logout() {
   });
 }
 
-// Redirige al dashboard si el rol no tiene acceso a la página actual
+// Redirige a 403 si el rol no tiene acceso a la página actual
 function guardPage(modulo, accion = "ver") {
   requireAuth();
   if (!canDo(modulo, accion)) {
-    showToast("No tienes permiso para ver esta página", "error");
-    setTimeout(() => window.location.href = "/index.html", 1500);
+    window.location.href = "/pages/403.html";
     return false;
   }
   return true;

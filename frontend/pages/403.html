@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Acceso denegado — Tienda</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="../css/style.css"/>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content" style="display:flex;align-items:center;justify-content:center;min-height:80vh;">
+    <div style="text-align:center;max-width:420px;">
+      <div style="font-size:64px;margin-bottom:16px;">⊘</div>
+      <h1 style="font-size:24px;color:var(--danger);margin-bottom:10px;">Acceso denegado</h1>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:8px;">
+        Tu rol (<strong id="rol-actual" style="color:var(--text)"></strong>) no tiene permiso para acceder a esta sección.
+      </p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:28px;">
+        Si crees que esto es un error, contacta al administrador del sistema.
+      </p>
+      <a href="/index.html" class="btn btn-primary">← Volver al Dashboard</a>
+    </div>
+  </main>
+</div>
+<script src="../js/api.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+  buildLayout(null);
+  const usuario = getUsuario();
+  document.getElementById("rol-actual").textContent = usuario?.tipo || "desconocido";
+</script>
+</body>
+</html>
