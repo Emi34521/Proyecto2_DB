@@ -43,7 +43,9 @@ DO $$ BEGIN DROP ROLE IF EXISTS rol_bodeguero; EXCEPTION WHEN OTHERS THEN NULL; 
 DO $$ BEGIN DROP ROLE IF EXISTS rol_supervisor;EXCEPTION WHEN OTHERS THEN NULL; END$$;
 DO $$ BEGIN DROP ROLE IF EXISTS rol_consulta;  EXCEPTION WHEN OTHERS THEN NULL; END$$;
 
+-- =============================================================
 --  TABLAS
+-- =============================================================
 
 CREATE TABLE categoria (
   id_categoria  SERIAL       PRIMARY KEY,
@@ -128,14 +130,18 @@ CREATE TABLE usuario (
     CHECK (tipo_usuario IN ('admin','vendedor','bodeguero','supervisor','consulta'))
 );
 
+-- =============================================================
 --  ÍNDICES
+-- =============================================================
 CREATE INDEX idx_producto_categoria ON producto(categoria_id);
 CREATE INDEX idx_venta_fecha        ON venta(fecha);
 CREATE INDEX idx_detalle_venta      ON detalle_ventas(venta_id);
 CREATE INDEX idx_detalle_producto   ON detalle_ventas(producto_id);
 CREATE INDEX idx_compra_proveedor   ON compra(id_proveedor);
 
+-- =============================================================
 --  VISTAS
+-- =============================================================
 
 CREATE VIEW v_ventas_detalle AS
 SELECT
@@ -182,20 +188,30 @@ FROM empleado e
 LEFT JOIN venta v ON v.empleado_id = e.id_empleado AND v.cancelada = FALSE
 GROUP BY e.id_empleado, e.nombre, e.cargo;
 
+-- =============================================================
 --  ROLES DEL DBMS
 --
 --  Documentación de roles:
---  rol_admin: Administrador total. SELECT/INSERT/UPDATE/DELETE en todas las tablas.
---  Gestiona usuarios, empleados, categorías, proveedores.
---  rol_vendedor: Gestiona ventas y clientes. SELECT en producto/categoria/proveedor/empleado. 
--- INSERT/SELECT en venta/detalle_ventas/cliente. Sin acceso a compra, usuario ni empleado (escritura).
-
---  rol_bodeguero: Gestiona inventario y compras. SELECT/INSERT en compra. SELECT/UPDATE(stock) en producto. 
---  Sin acceso a venta ni usuario.
--- rol_supervisor: Lectura total + puede cancelar ventas (UPDATE venta.cancelada). SELECT en todas las tablas y vistas.
--- UPDATE en venta.
--- rol_consulta: Solo lectura en tablas no sensibles: producto, categoria, proveedor, cliente, venta, detalle_ventas. Sin acceso a usuario.
-
+--  ┌─────────────────┬──────────────────────────────────────────────────────────────────┐
+--  │ Rol             │ Descripción y permisos                                           │
+--  ├─────────────────┼──────────────────────────────────────────────────────────────────┤
+--  │ rol_admin       │ Administrador total. SELECT/INSERT/UPDATE/DELETE en todas las    │
+--  │                 │ tablas. Gestiona usuarios, empleados, categorías, proveedores.   │
+--  ├─────────────────┼──────────────────────────────────────────────────────────────────┤
+--  │ rol_vendedor    │ Gestiona ventas y clientes. SELECT en producto/categoria/         │
+--  │                 │ proveedor/empleado. INSERT/SELECT en venta/detalle_ventas/       │
+--  │                 │ cliente. Sin acceso a compra, usuario ni empleado (escritura).  │
+--  ├─────────────────┼──────────────────────────────────────────────────────────────────┤
+--  │ rol_bodeguero   │ Gestiona inventario y compras. SELECT/INSERT en compra.          │
+--  │                 │ SELECT/UPDATE(stock) en producto. Sin acceso a venta ni usuario.│
+--  ├─────────────────┼──────────────────────────────────────────────────────────────────┤
+--  │ rol_supervisor  │ Lectura total + puede cancelar ventas (UPDATE venta.cancelada). │
+--  │                 │ SELECT en todas las tablas y vistas. UPDATE en venta.            │
+--  ├─────────────────┼──────────────────────────────────────────────────────────────────┤
+--  │ rol_consulta    │ Solo lectura en tablas no sensibles: producto, categoria,        │
+--  │                 │ proveedor, cliente, venta, detalle_ventas. Sin acceso a usuario.│
+--  └─────────────────┴──────────────────────────────────────────────────────────────────┘
+-- =============================================================
 
 -- Crear los 5 roles
 CREATE ROLE rol_admin;
@@ -244,7 +260,9 @@ TO rol_consulta;
 GRANT SELECT ON v_ventas_detalle, v_stock_bajo, v_resumen_ventas_empleado
   TO rol_admin, rol_vendedor, rol_bodeguero, rol_supervisor, rol_consulta;
 
+-- =============================================================
 --  STORED PROCEDURES
+-- =============================================================
 
 -- ─────────────────────────────────────────────────────────────
 -- SP 1: sp_registrar_venta
@@ -332,11 +350,13 @@ EXCEPTION
 END;
 $$;
 
+-- ─────────────────────────────────────────────────────────────
 -- SP 2: sp_registrar_compra
 --   Registra una compra a proveedor e incrementa stock.
 --   Parámetros IN:  p_proveedor_id, p_producto_id,
 --                   p_cantidad, p_precio_unitario
 --   Parámetro OUT:  p_compra_id
+-- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE PROCEDURE sp_registrar_compra(
   IN  p_proveedor_id      INTEGER,
   IN  p_producto_id       INTEGER,
@@ -375,10 +395,12 @@ EXCEPTION
 END;
 $$;
 
+-- ─────────────────────────────────────────────────────────────
 -- SP 3: sp_crear_producto
 --   Crea un nuevo producto validando que la categoría y el
 --   proveedor existan.
 --   Parámetro OUT: p_producto_id
+-- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE PROCEDURE sp_crear_producto(
   IN  p_nombre          VARCHAR(150),
   IN  p_descripcion     TEXT,
@@ -411,13 +433,14 @@ EXCEPTION
 END;
 $$;
 
+-- ─────────────────────────────────────────────────────────────
 -- SP 4: sp_actualizar_stock
 --   Ajusta el stock de un producto (puede ser ajuste manual
 --   positivo o negativo). Lanza excepción si el stock
 --   resultante sería negativo.
 --   Parámetros IN:  p_producto_id, p_ajuste (puede ser negativo)
 --   Parámetro OUT:  p_stock_nuevo
-
+-- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE PROCEDURE sp_actualizar_stock(
   IN  p_producto_id  INTEGER,
   IN  p_ajuste       INTEGER,
@@ -454,10 +477,11 @@ EXCEPTION
 END;
 $$;
 
+-- ─────────────────────────────────────────────────────────────
 -- SP 5: sp_crear_cliente
 --   Crea un cliente validando que el DPI no esté duplicado.
 --   Parámetro OUT: p_cliente_id
-
+-- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE PROCEDURE sp_crear_cliente(
   IN  p_dpi       VARCHAR(150),
   IN  p_nombre    VARCHAR(150),
@@ -486,12 +510,13 @@ EXCEPTION
 END;
 $$;
 
+-- ─────────────────────────────────────────────────────────────
 -- SP 6 (FUNCIÓN): sp_cancelar_venta
 --   Cancela una venta y restaura el stock de los productos.
 --   Incluye transacción con ROLLBACK explícito en excepción.
 --   Parámetros IN:  p_venta_id
 --   Retorna: TEXT con mensaje de resultado
-
+-- ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION sp_cancelar_venta(p_venta_id INTEGER)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -539,7 +564,9 @@ EXCEPTION
 END;
 $$;
 
+-- =============================================================
 --  DATOS DE PRUEBA
+-- =============================================================
 
 INSERT INTO categoria (nombre, descripcion) VALUES
   ('Electrónica',       'Dispositivos y accesorios electrónicos'),
@@ -699,3 +726,241 @@ INSERT INTO compra (id_proveedor, id_producto, cantidad_compra, precio_mayor_uni
   (6, 21, 30,   90.00, NOW() - INTERVAL '10 days'),
   (7, 27,200,   22.00, NOW() - INTERVAL '5 days'),
   (5, 29, 60,   70.00, NOW() - INTERVAL '4 days');
+
+--  Funciones wrapper para SPs con OUT
+--  Convierte los procedures con OUT en funciones que retornan
+--  el ID directamente, compatibles con sequelize.query() + pg.
+
+DROP FUNCTION IF EXISTS fn_registrar_venta;
+DROP FUNCTION IF EXISTS fn_registrar_compra;
+DROP FUNCTION IF EXISTS fn_crear_producto;
+DROP FUNCTION IF EXISTS fn_crear_cliente;
+DROP FUNCTION IF EXISTS fn_actualizar_stock;
+
+-- ── fn_registrar_venta ────────────────────────────────────────
+CREATE OR REPLACE FUNCTION fn_registrar_venta(
+  p_cliente_id  INTEGER,
+  p_empleado_id INTEGER,
+  p_productos   JSONB
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_item         JSONB;
+  v_producto_id  INTEGER;
+  v_cantidad     INTEGER;
+  v_precio       NUMERIC(10,2);
+  v_stock_actual INTEGER;
+  v_total        NUMERIC(12,2) := 0;
+  v_venta_id     INTEGER;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM cliente  WHERE id_cliente  = p_cliente_id) THEN
+    RAISE EXCEPTION 'Cliente % no existe', p_cliente_id;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM empleado WHERE id_empleado = p_empleado_id) THEN
+    RAISE EXCEPTION 'Empleado % no existe', p_empleado_id;
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_productos)
+  LOOP
+    v_producto_id := (v_item->>'producto_id')::INTEGER;
+    v_cantidad    := (v_item->>'cantidad')::INTEGER;
+
+    SELECT precio_unitario, stock
+      INTO v_precio, v_stock_actual
+      FROM producto
+     WHERE id_producto = v_producto_id
+       FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Producto % no existe', v_producto_id;
+    END IF;
+    IF v_stock_actual < v_cantidad THEN
+      RAISE EXCEPTION 'Stock insuficiente para producto % (disponible: %, solicitado: %)',
+        v_producto_id, v_stock_actual, v_cantidad;
+    END IF;
+
+    v_total := v_total + (v_precio * v_cantidad);
+  END LOOP;
+
+  INSERT INTO venta (cliente_id, empleado_id, total)
+  VALUES (p_cliente_id, p_empleado_id, v_total)
+  RETURNING id_venta INTO v_venta_id;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_productos)
+  LOOP
+    v_producto_id := (v_item->>'producto_id')::INTEGER;
+    v_cantidad    := (v_item->>'cantidad')::INTEGER;
+
+    SELECT precio_unitario INTO v_precio
+      FROM producto WHERE id_producto = v_producto_id;
+
+    INSERT INTO detalle_ventas (venta_id, producto_id, cantidad, precio_unitario)
+    VALUES (v_venta_id, v_producto_id, v_cantidad, v_precio);
+
+    UPDATE producto
+       SET stock = stock - v_cantidad, updated_at = NOW()
+     WHERE id_producto = v_producto_id;
+  END LOOP;
+
+  RETURN v_venta_id;
+EXCEPTION
+  WHEN OTHERS THEN RAISE;
+END;
+$$;
+
+-- ── fn_registrar_compra ───────────────────────────────────────
+CREATE OR REPLACE FUNCTION fn_registrar_compra(
+  p_proveedor_id    INTEGER,
+  p_producto_id     INTEGER,
+  p_cantidad        INTEGER,
+  p_precio_unitario NUMERIC(10,2)
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_compra_id INTEGER;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM proveedor WHERE id_proveedor = p_proveedor_id) THEN
+    RAISE EXCEPTION 'Proveedor % no existe', p_proveedor_id;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM producto WHERE id_producto = p_producto_id) THEN
+    RAISE EXCEPTION 'Producto % no existe', p_producto_id;
+  END IF;
+  IF p_cantidad <= 0 THEN
+    RAISE EXCEPTION 'La cantidad debe ser mayor a 0';
+  END IF;
+  IF p_precio_unitario <= 0 THEN
+    RAISE EXCEPTION 'El precio debe ser mayor a 0';
+  END IF;
+
+  INSERT INTO compra (id_proveedor, id_producto, cantidad_compra, precio_mayor_unidad)
+  VALUES (p_proveedor_id, p_producto_id, p_cantidad, p_precio_unitario)
+  RETURNING id_compra INTO v_compra_id;
+
+  UPDATE producto
+     SET stock = stock + p_cantidad, updated_at = NOW()
+   WHERE id_producto = p_producto_id;
+
+  RETURN v_compra_id;
+EXCEPTION
+  WHEN OTHERS THEN RAISE;
+END;
+$$;
+
+-- ── fn_crear_producto ─────────────────────────────────────────
+CREATE OR REPLACE FUNCTION fn_crear_producto(
+  p_nombre       VARCHAR(150),
+  p_descripcion  TEXT,
+  p_precio       NUMERIC(10,2),
+  p_stock        INTEGER,
+  p_categoria_id INTEGER,
+  p_proveedor_id INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_producto_id INTEGER;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM categoria WHERE id_categoria = p_categoria_id) THEN
+    RAISE EXCEPTION 'Categoría % no existe', p_categoria_id;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM proveedor WHERE id_proveedor = p_proveedor_id) THEN
+    RAISE EXCEPTION 'Proveedor % no existe', p_proveedor_id;
+  END IF;
+  IF p_precio < 0 THEN
+    RAISE EXCEPTION 'El precio no puede ser negativo';
+  END IF;
+
+  INSERT INTO producto (nombre, descripcion, precio_unitario, stock, categoria_id, proveedor_id)
+  VALUES (p_nombre, p_descripcion, p_precio, p_stock, p_categoria_id, p_proveedor_id)
+  RETURNING id_producto INTO v_producto_id;
+
+  RETURN v_producto_id;
+EXCEPTION
+  WHEN OTHERS THEN RAISE;
+END;
+$$;
+
+-- ── fn_crear_cliente ──────────────────────────────────────────
+CREATE OR REPLACE FUNCTION fn_crear_cliente(
+  p_dpi       VARCHAR(150),
+  p_nombre    VARCHAR(150),
+  p_email     VARCHAR(150),
+  p_telefono  VARCHAR(20),
+  p_direccion TEXT
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_cliente_id INTEGER;
+BEGIN
+  IF EXISTS (SELECT 1 FROM cliente WHERE dpi = p_dpi) THEN
+    RAISE EXCEPTION 'Ya existe un cliente con DPI %', p_dpi;
+  END IF;
+  IF p_nombre IS NULL OR TRIM(p_nombre) = '' THEN
+    RAISE EXCEPTION 'El nombre del cliente es obligatorio';
+  END IF;
+
+  INSERT INTO cliente (dpi, nombre, email, telefono, direccion)
+  VALUES (p_dpi, p_nombre, p_email, p_telefono, p_direccion)
+  RETURNING id_cliente INTO v_cliente_id;
+
+  RETURN v_cliente_id;
+EXCEPTION
+  WHEN OTHERS THEN RAISE;
+END;
+$$;
+
+-- ── fn_actualizar_stock ───────────────────────────────────────
+-- SP con lógica IN/OUT: recibe ajuste (positivo o negativo),
+-- valida que el stock no quede negativo, retorna stock nuevo.
+CREATE OR REPLACE FUNCTION fn_actualizar_stock(
+  p_producto_id INTEGER,
+  p_ajuste      INTEGER
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_stock_actual INTEGER;
+  v_stock_nuevo  INTEGER;
+BEGIN
+  SELECT stock INTO v_stock_actual
+    FROM producto
+   WHERE id_producto = p_producto_id
+     FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Producto % no existe', p_producto_id;
+  END IF;
+
+  v_stock_nuevo := v_stock_actual + p_ajuste;
+
+  IF v_stock_nuevo < 0 THEN
+    RAISE EXCEPTION
+      'Ajuste inválido: stock resultante sería negativo (actual: %, ajuste: %)',
+      v_stock_actual, p_ajuste;
+  END IF;
+
+  UPDATE producto
+     SET stock = v_stock_nuevo, updated_at = NOW()
+   WHERE id_producto = p_producto_id;
+
+  RETURN v_stock_nuevo;
+EXCEPTION
+  WHEN OTHERS THEN RAISE;
+END;
+$$;
+
+-- Permisos de ejecución
+GRANT EXECUTE ON FUNCTION fn_registrar_venta  TO rol_admin, rol_vendedor;
+GRANT EXECUTE ON FUNCTION fn_registrar_compra TO rol_admin, rol_bodeguero;
+GRANT EXECUTE ON FUNCTION fn_crear_producto   TO rol_admin;
+GRANT EXECUTE ON FUNCTION fn_crear_cliente    TO rol_admin, rol_vendedor;
+GRANT EXECUTE ON FUNCTION fn_actualizar_stock TO rol_admin, rol_bodeguero;
+GRANT EXECUTE ON FUNCTION sp_cancelar_venta   TO rol_admin, rol_supervisor;

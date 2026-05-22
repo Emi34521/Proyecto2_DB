@@ -1,16 +1,86 @@
-const { DataTypes } = require("sequelize");
+// routes/compras.js — usa stored procedures
+const express   = require("express");
+const router    = express.Router();
 const sequelize = require("../config/database");
+const { Compra, Producto, Proveedor } = require("../models");
+const { authMiddleware, requireRole } = require("../middleware/auth");
 
-const Compra = sequelize.define("Compra", {
-  id_compra:           { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-  id_proveedor:        { type: DataTypes.INTEGER, allowNull: false },
-  id_producto:         { type: DataTypes.INTEGER, allowNull: false },
-  cantidad_compra:     { type: DataTypes.INTEGER, allowNull: false },
-  precio_mayor_unidad: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-  fecha:               { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-}, {
-  tableName: "compra",
-  timestamps: false,
-});
+// GET all
+router.get("/", authMiddleware,
+  requireRole("admin", "bodeguero", "supervisor"),
+  async (req, res) => {
+    try {
+      const compras = await Compra.findAll({
+        include: [
+          { model: Producto,  as: "producto",  attributes: ["nombre"] },
+          { model: Proveedor, as: "proveedor", attributes: ["nombre"] },
+        ],
+        order: [["fecha", "DESC"]],
+      });
+      res.json(compras);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  }
+);
 
-module.exports = Compra;
+// POST — bodeguero y admin — SP sp_registrar_compra
+router.post("/", authMiddleware,
+  requireRole("admin", "bodeguero"),
+  async (req, res) => {
+    const { id_proveedor, id_producto, cantidad_compra, precio_mayor_unidad } = req.body;
+    const t = await sequelize.transaction();
+    try {
+      // Invoca fn_registrar_compra (registra compra e incrementa stock)
+      const [result] = await sequelize.query(
+        `SELECT fn_registrar_compra(:prov_id, :prod_id, :cantidad, :precio) AS compra_id`,
+        {
+          replacements: {
+            prov_id:  id_proveedor,
+            prod_id:  id_producto,
+            cantidad: cantidad_compra,
+            precio:   precio_mayor_unidad,
+          },
+          transaction: t,
+        }
+      );
+      await t.commit();
+
+      const compraId = result[0]?.compra_id;
+      const nueva = await Compra.findByPk(compraId, {
+        include: [
+          { model: Producto,  as: "producto",  attributes: ["nombre"] },
+          { model: Proveedor, as: "proveedor", attributes: ["nombre"] },
+        ],
+      });
+      res.status(201).json(nueva);
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+// PATCH /ajuste-stock — bodeguero y admin — SP sp_actualizar_stock
+router.patch("/ajuste-stock", authMiddleware,
+  requireRole("admin", "bodeguero"),
+  async (req, res) => {
+    const { producto_id, ajuste } = req.body;
+    const t = await sequelize.transaction();
+    try {
+      // Invoca fn_actualizar_stock (valida stock no quede negativo, retorna stock nuevo)
+      const [result] = await sequelize.query(
+        `SELECT fn_actualizar_stock(:prod_id, :ajuste) AS stock_nuevo`,
+        {
+          replacements: { prod_id: producto_id, ajuste },
+          transaction: t,
+        }
+      );
+      await t.commit();
+      res.json({ stock_nuevo: result[0]?.stock_nuevo, message: "Stock ajustado correctamente" });
+    } catch (e) {
+      await t.rollback();
+      res.status(400).json({ error: e.message });
+    }
+  }
+);
+
+module.exports = router;
